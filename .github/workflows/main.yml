@@ -6,6 +6,9 @@ on:
       - 'v*' # 当推送以 v 开头标签时触发（例如 v1.0.0）
   workflow_dispatch: # 允许在 Actions 页面手动点击按钮触发测试打包
 
+env:
+  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: 'true'
+  
 jobs:
   release:
     name: Build for ${{ matrix.os }}
