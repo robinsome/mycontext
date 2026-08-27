@@ -101,12 +101,25 @@ if (!existsSync(srcInterpreter)) fail(`找不到内置解释器：${srcInterpret
 
 // site-packages 的位置随小版本变（python3.12 → 3.13），所以扫出来而不是写死。
 function findSitePackages(base) {
-  const libDir = join(base, "lib")
-  if (!existsSync(libDir)) return null
-  for (const entry of readdirSync(libDir)) {
-    if (!entry.startsWith("python")) continue
-    const candidate = join(libDir, entry, "site-packages")
-    if (existsSync(candidate)) return candidate
+  /**
+   * Unix venv: `lib/pythonX.Y/site-packages`;
+   * Windows venv: `Lib/site-packages`（没有 pythonX.Y 这一层）。
+   *
+   * 不能只按当前进程的 `process.platform` 猜路径：这个函数同时查开发态
+   * venv 与刚复制出的裸解释器，且 Windows 的大小写目录名也不同。
+   */
+  for (const libName of ["lib", "Lib"]) {
+    const libDir = join(base, libName)
+    if (!existsSync(libDir)) continue
+
+    const direct = join(libDir, "site-packages")
+    if (existsSync(direct)) return direct
+
+    for (const entry of readdirSync(libDir)) {
+      if (!entry.toLowerCase().startsWith("python")) continue
+      const candidate = join(libDir, entry, "site-packages")
+      if (existsSync(candidate)) return candidate
+    }
   }
   return null
 }

@@ -108,12 +108,15 @@ function flattenedPython(repoRoot) {
 function hasFlattenedPython(repoRoot) {
   const exe = flattenedPython(repoRoot)
   if (!existsSync(exe)) return false
-  const libDir = join(pythonCacheDir(repoRoot), "python", "lib")
-  if (!existsSync(libDir)) return false
-  for (const entry of readdirSync(libDir)) {
-    if (!entry.startsWith("python")) continue
-    // 目录探测而不是跑解释器：这条判据在启动路径上，spawn 一次要几百毫秒。
-    if (existsSync(join(libDir, entry, "site-packages", "qdrant_client"))) return true
+  const pythonRoot = join(pythonCacheDir(repoRoot), "python")
+  for (const libName of ["lib", "Lib"]) {
+    const libDir = join(pythonRoot, libName)
+    if (!existsSync(libDir)) continue
+    if (existsSync(join(libDir, "site-packages", "qdrant_client"))) return true
+    for (const entry of readdirSync(libDir)) {
+      if (!entry.toLowerCase().startsWith("python")) continue
+      if (existsSync(join(libDir, entry, "site-packages", "qdrant_client"))) return true
+    }
   }
   return false
 }
