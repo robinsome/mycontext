@@ -208,7 +208,9 @@ import importlib.metadata as md, pathlib, sys
 files = sys.argv[1:]
 want = []
 for f in files:
-    for line in pathlib.Path(f).read_text().splitlines():
+    # requirements 文件统一按 UTF-8 读取；Windows 默认编码可能是 cp1252，
+    # 会在包含非 ASCII 注释的清单上把构建误判为失败。
+    for line in pathlib.Path(f).read_text(encoding="utf-8").splitlines():
         line = line.split("#")[0].strip()
         if not line or line.startswith("-"):
             continue
