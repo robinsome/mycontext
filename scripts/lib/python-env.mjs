@@ -570,7 +570,17 @@ export function relocateVenv(repoRoot) {
    * 走到这里说明布局非常规 —— 典型是 `bin/python3` 那个相对软链被解引用成了
    * 实体文件（`cp -Rc` 会这样，实测踩过），那时 CPython 没法自己找到解释器。
    */
-  const interpreterBin = join(pythonCacheDir(repoRoot), "python", "bin")
+  /**
+   * Windows 的 venv 是**复制**解释器而不是软链，`home` 必须指向 python.exe
+   * 所在目录（`python/`）；macOS 才是 `python/bin`（python3 在 bin 下）。
+   * 写错（比如把 macOS 布局套到 win32 上）venv 的 python 会报
+   * `No Python at '<home>/python.exe'` —— 实测踩过。
+   */
+  const interpreterBin = join(
+    pythonCacheDir(repoRoot),
+    "python",
+    ...(process.platform === "win32" ? [] : ["bin"]),
+  )
   const desired = `home = ${interpreterBin}`
   if (homeLine.test(current)) {
     const already = current.match(homeLine)?.[0]
