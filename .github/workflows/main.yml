@@ -17,7 +17,7 @@ jobs:
     strategy:
       matrix:
         # 使用三种系统的虚拟机矩阵同时进行构建
-        os: [windows-latest]
+        os: [macos-14]
 
     steps:
       - name: Check out repository
