@@ -16,12 +16,22 @@ import { dirname, join, resolve } from "node:path"
 const root = resolve(import.meta.dirname, "..")
 const require = createRequire(import.meta.url)
 
-const binary = (name) =>
-  resolve(root, "node_modules/.bin", process.platform === "win32" ? `${name}.cmd` : name)
+/**
+ * 为什么不用 node_modules/.bin 下的 .cmd shim：Node 22 在 Windows 11
+ * （实测 build 26200）上直接 spawn `.cmd` 会稳定报 EINVAL（任意 .cmd 都报，
+ * 而 shell:true 或 cmd.exe /c 正常）。pnpm 的 shim 内容等价于
+ * `node <真实 js 入口>`，这里直接解析到 js 入口用 process.execPath 跑，
+ * 行为与 shim 一致，且跨平台、跨 Node 版本稳定。
+ */
+const runNode = (script, args = [], opts = {}) =>
+  spawnSync(process.execPath, [script, ...args], opts)
+
+/** electron 真实二进制路径：require('electron') 在普通 node 进程里返回的就是它 */
+const electronBinary = require("electron")
 
 const canLoadBetterSqlite3 = () =>
   spawnSync(
-    binary("electron"),
+    electronBinary,
     [
       "-e",
       "const Database = require('better-sqlite3'); const db = new Database(':memory:'); db.close()",
@@ -49,7 +59,10 @@ const betterSqlite3Dir = dirname(
 // 一次重建 node_modules 就会清掉 dist/ 而 stamp 仍在。
 if (!existsSync(join(dirname(electronPkgPath), "path.txt"))) {
   console.log(`下载 Electron ${electronVersion} 二进制…`)
-  const download = spawnSync(binary("install-electron"), { cwd: root, stdio: "inherit" })
+  const download = runNode(join(dirname(electronPkgPath), "install.js"), [], {
+    cwd: root,
+    stdio: "inherit",
+  })
   if (download.error) throw download.error
   if (download.status !== 0) process.exit(download.status ?? 1)
 }
@@ -68,8 +81,11 @@ if (existsSync(stampPath) && readFileSync(stampPath, "utf8").trim() === stamp) {
 const electronHome = join(tmpdir(), "mycontext-electron-home")
 mkdirSync(electronHome, { recursive: true })
 
-const result = spawnSync(
-  binary("electron-rebuild"),
+// 用 main 入口反推 lib/ 目录再拼 cli.js：@electron/rebuild 的 exports 没暴露
+// ./lib/cli.js，require.resolve 直接解析会 ERR_PACKAGE_PATH_NOT_EXPORTED。
+const electronRebuildCli = join(dirname(require.resolve("@electron/rebuild")), "cli.js")
+const result = runNode(
+  electronRebuildCli,
   ["-f", "-m", betterSqlite3Dir, "-v", electronVersion],
   {
     cwd: root,
