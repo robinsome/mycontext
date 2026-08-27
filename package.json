@@ -16,6 +16,7 @@
     "build:app": "node scripts/rebuild-electron.mjs && pnpm run prepare:bin && node scripts/build-python-bundle.mjs && pnpm --filter @mycontext/desktop exec electron-vite build",
     "dist:mac": "pnpm run build:app && electron-builder --mac --dir --config apps/desktop/electron-builder.yml",
     "dist:mac:dmg": "pnpm run build:app && electron-builder --mac dmg --config apps/desktop/electron-builder.yml",
+    "dist:win": "pnpm run build:app && electron-builder --publish never --win --x64 --config apps/desktop/electron-builder.windows.yml",
     "dist:repack": "electron-builder --mac --dir --config apps/desktop/electron-builder.yml",
     "typecheck": "tsc -b --pretty false",
     "typecheck:tests": "tsc -p tests/tsconfig.json --noEmit --pretty false",

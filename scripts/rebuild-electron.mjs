@@ -34,8 +34,13 @@ const canLoadBetterSqlite3 = () =>
   ).status === 0
 
 // pnpm 不把依赖平铺到 node_modules/<name>，必须按解析路径找 package.json。
-const electronPkgPath = require.resolve("electron/package.json")
+const electronPkgPath = require.resolve("electron/package.json", { paths: [root] })
 const electronVersion = JSON.parse(readFileSync(electronPkgPath, "utf8")).version
+// pnpm 不把依赖平铺到 node_modules/<name>；且 Node 会从 cwd 向上找模块，
+// 用户 HOME 下若另有 better-sqlite3（常见旧版）会被 electron-rebuild 误用。
+const betterSqlite3Dir = dirname(
+  require.resolve("better-sqlite3/package.json", { paths: [root] }),
+)
 
 // Electron 42 起上游删掉了 postinstall，二进制改由使用方显式调 install-electron 下载。
 // 因此 pnpm install 会干净地成功却留下一个只有 JS 壳的包，electron-vite 随后报
@@ -65,7 +70,7 @@ mkdirSync(electronHome, { recursive: true })
 
 const result = spawnSync(
   binary("electron-rebuild"),
-  ["-f", "-w", "better-sqlite3", "-v", electronVersion],
+  ["-f", "-m", betterSqlite3Dir, "-v", electronVersion],
   {
     cwd: root,
     env: { ...process.env, HOME: electronHome, USERPROFILE: electronHome },
