@@ -96,6 +96,27 @@ const DEFINITIONS = {
   modelProvider: { env: "MYCONTEXT_MODEL_PROVIDER", default: "openai", sensitive: false },
   embedModel: { env: "MYCONTEXT_EMBED_MODEL", default: "text-embedding-v4", sensitive: false },
   /**
+   * 向量（embedding）专用网关。留空则回退主配置（见 RuntimeConfigService）。
+   *
+   * ★ 单独一路的理由：向量服务常与主 LLM 不在同一网关/模型族（如主模型走 Claude、
+   * 向量走 DashScope text-embedding-v4）。默认全空（回退主配置），需要单独指时才填。
+   */
+  embedLlmBaseUrl: { env: "MYCONTEXT_EMBED_LLM_BASE_URL", default: "", sensitive: false },
+  embedLlmApiKey: { env: "MYCONTEXT_EMBED_LLM_API_KEY", default: "", sensitive: true },
+  /**
+   * 向量维度。**必须与网关实际返回的维度一致**（kl 的 Qdrant 集合按此建）。
+   * DashScope text-embedding-v4 常用 2048 + sendDimensions。
+   */
+  embeddingDim: { env: "MYCONTEXT_EMBEDDING_DIM", default: "2048", sensitive: false },
+  /**
+   * 是否给 embedding 请求带 `dimensions` 参数（DashScope 兼容网关要 true）。
+   */
+  embedSendDimensions: {
+    env: "MYCONTEXT_EMBED_SEND_DIMENSIONS",
+    default: "1",
+    sensitive: false,
+  },
+  /**
    * KL（知识图谱）建索引专用的网关。留空则回退主配置（见 RuntimeConfigService）。
    *
    * ★ 单独一路的理由：换主模型时不该顺带把 kl 的抽取也换坏（历史上只有部分模型能在
@@ -134,6 +155,10 @@ export const appConfigSchema = z.object({
   modelMain: z.string().min(1),
   modelProvider: z.enum(["openai", "anthropic"]),
   embedModel: z.string().min(1),
+  embedLlmBaseUrl: z.string(),
+  embedLlmApiKey: z.string(),
+  embeddingDim: z.number().int().min(1).max(8192),
+  embedSendDimensions: z.boolean(),
   klLlmBaseUrl: z.string(),
   klLlmApiKey: z.string(),
   // KL 三项都可留空（回退主配置），所以模型这项**不**加 min(1)。
@@ -173,6 +198,11 @@ function coerce(key: ConfigKey, raw: string): unknown {
     // 交给 schema 报「不是合法端口」，比这里静默回退到默认值更容易发现配置写错。
     return Number.isNaN(parsed) ? raw.trim() : parsed
   }
+  if (key === "embeddingDim") {
+    const parsed = Number.parseInt(raw.trim(), 10)
+    return Number.isNaN(parsed) ? raw.trim() : parsed
+  }
+  if (key === "embedSendDimensions") return !BOOLEAN_FALSE.has(raw.trim().toLowerCase())
   return raw.trim()
 }
 

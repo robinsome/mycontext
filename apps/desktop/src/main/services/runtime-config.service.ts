@@ -39,6 +39,9 @@ interface StoredOverrides {
   /** 主模型协议覆盖。缺省 = 走默认层（kernel 默认 openai）。 */
   mainProvider?: ModelProvider
   embedModel?: string
+  embedLlmBaseUrl?: string
+  embeddingDim?: number
+  embedSendDimensions?: boolean
   klLlmBaseUrl?: string
   klModelMain?: string
   /** 知识库协议覆盖。缺省 = 走默认层（kernel 默认 openai）。 */
@@ -53,6 +56,10 @@ export interface ResolvedRuntimeConfig {
   /** 主模型协议（默认层 ?? 用户覆盖）。opencode 子进程与直连 LlmClient 都按它切传输。 */
   mainProvider: ModelProvider
   embedModel: string
+  embedBaseUrl: string
+  embedApiKey: string
+  embeddingDim: number
+  embedSendDimensions: boolean
   /** KL 三项已解析回退后的**实际生效**值 */
   klBaseUrl: string
   klApiKey: string
@@ -69,6 +76,10 @@ export interface SaveRuntimeConfigPatch {
   /** 主模型协议。undefined = 不改。 */
   mainProvider?: ModelProvider | undefined
   embedModel?: string | undefined
+  embedLlmBaseUrl?: string | undefined
+  embedLlmApiKey?: string | null | undefined
+  embeddingDim?: number | undefined
+  embedSendDimensions?: boolean | undefined
   klLlmBaseUrl?: string | undefined
   klLlmApiKey?: string | null | undefined
   klModelMain?: string | undefined
@@ -93,6 +104,7 @@ export interface RuntimeConfigServiceOptions {
 
 const SETTING_KEY = "runtime_llm_config"
 const LLM_API_KEY_SECRET = "runtime_llm_api_key"
+const EMBED_API_KEY_SECRET = "runtime_embed_api_key"
 const KL_API_KEY_SECRET = "runtime_kl_api_key"
 
 /** 旧的隐藏高级面板存储位（首次运行 adopt 用）。 */
@@ -129,6 +141,9 @@ export class RuntimeConfigService {
     const mainProvider: ModelProvider = stored.mainProvider ?? d.modelProvider
     const embedModel = pick(stored.embedModel, d.embedModel)
 
+    const embedBaseRaw = pick(stored.embedLlmBaseUrl, d.embedLlmBaseUrl)
+    const embedApiRaw = this.options.secretStore.read(EMBED_API_KEY_SECRET) ?? d.embedLlmApiKey
+
     // KL 三项：存的(非空) ?? env 默认层 ?? 回退主配置。
     const klBaseRaw = pick(stored.klLlmBaseUrl, d.klLlmBaseUrl)
     const klApiRaw = this.options.secretStore.read(KL_API_KEY_SECRET) ?? d.klLlmApiKey
@@ -146,6 +161,10 @@ export class RuntimeConfigService {
       modelMain,
       mainProvider,
       embedModel,
+      embedBaseUrl: embedBaseRaw.trim() !== "" ? embedBaseRaw : llmBaseUrl,
+      embedApiKey: embedApiRaw.trim() !== "" ? embedApiRaw : llmApiKey,
+      embeddingDim: stored.embeddingDim ?? d.embeddingDim,
+      embedSendDimensions: stored.embedSendDimensions ?? d.embedSendDimensions,
       klBaseUrl: klBaseRaw.trim() !== "" ? klBaseRaw : llmBaseUrl,
       klApiKey: klApiRaw.trim() !== "" ? klApiRaw : llmApiKey,
       klModel: klModelRaw.trim() !== "" ? klModelRaw : modelMain,
@@ -161,7 +180,13 @@ export class RuntimeConfigService {
 
     const plain = (
       override: string | undefined,
-      key: "llmBaseUrl" | "modelMain" | "embedModel" | "klLlmBaseUrl" | "klModelMain",
+      key:
+        | "llmBaseUrl"
+        | "modelMain"
+        | "embedModel"
+        | "embedLlmBaseUrl"
+        | "klLlmBaseUrl"
+        | "klModelMain",
     ): { value: string; source: FieldSource } => {
       const trimmed = override?.trim() ?? ""
       if (trimmed !== "") return { value: trimmed, source: "user" }
@@ -170,7 +195,7 @@ export class RuntimeConfigService {
 
     const secret = (
       secretKey: string,
-      defaultKey: "llmApiKey" | "klLlmApiKey",
+      defaultKey: "llmApiKey" | "embedLlmApiKey" | "klLlmApiKey",
     ): { configured: boolean; tail: string | null; source: FieldSource } => {
       const fromSecret = this.options.secretStore.read(secretKey)
       if (fromSecret !== null && fromSecret !== "") {
@@ -198,6 +223,20 @@ export class RuntimeConfigService {
         source: stored.mainProvider !== undefined ? "user" : this.defaultSource("modelProvider"),
       },
       embedModel: plain(stored.embedModel, "embedModel"),
+      embedLlmBaseUrl: plain(stored.embedLlmBaseUrl, "embedLlmBaseUrl"),
+      embedLlmApiKey: secret(EMBED_API_KEY_SECRET, "embedLlmApiKey"),
+      embeddingDim: {
+        value: String(resolved.embeddingDim),
+        source:
+          stored.embeddingDim !== undefined ? "user" : this.defaultSource("embeddingDim"),
+      },
+      embedSendDimensions: {
+        value: resolved.embedSendDimensions,
+        source:
+          stored.embedSendDimensions !== undefined
+            ? "user"
+            : this.defaultSource("embedSendDimensions"),
+      },
       klLlmBaseUrl: plain(stored.klLlmBaseUrl, "klLlmBaseUrl"),
       klLlmApiKey: secret(KL_API_KEY_SECRET, "klLlmApiKey"),
       klModelMain: plain(stored.klModelMain, "klModelMain"),
@@ -212,6 +251,13 @@ export class RuntimeConfigService {
         apiKeyConfigured: resolved.klApiKey !== "",
         provider: resolved.klProvider,
       },
+      embedEffective: {
+        baseUrl: resolved.embedBaseUrl,
+        model: resolved.embedModel,
+        apiKeyConfigured: resolved.embedApiKey !== "",
+        embeddingDim: resolved.embeddingDim,
+        sendDimensions: resolved.embedSendDimensions,
+      },
     }
   }
 
@@ -223,7 +269,10 @@ export class RuntimeConfigService {
     const stored = this.readStored()
 
     // 只作用于**自由串**字段（mainProvider/klProvider 是枚举，单独处理，见下）。
-    type StringKey = Exclude<keyof StoredOverrides, "mainProvider" | "klProvider">
+    type StringKey = Exclude<
+      keyof StoredOverrides,
+      "mainProvider" | "klProvider" | "embeddingDim" | "embedSendDimensions"
+    >
     const merge = (key: StringKey, value: string | undefined): void => {
       if (value === undefined) return
       // 空串 = 清空这一项（回退默认层）；非空 = 覆盖
@@ -233,8 +282,15 @@ export class RuntimeConfigService {
     merge("llmBaseUrl", patch.llmBaseUrl)
     merge("modelMain", patch.modelMain)
     merge("embedModel", patch.embedModel)
+    merge("embedLlmBaseUrl", patch.embedLlmBaseUrl)
     merge("klLlmBaseUrl", patch.klLlmBaseUrl)
     merge("klModelMain", patch.klModelMain)
+    if (patch.embeddingDim !== undefined) {
+      stored.embeddingDim = patch.embeddingDim
+    }
+    if (patch.embedSendDimensions !== undefined) {
+      stored.embedSendDimensions = patch.embedSendDimensions
+    }
     // 协议是枚举而非自由串，不走 trim-and-delete 的 merge：undefined = 不改，
     // 给了就覆盖（两个合法值之一，由 contract 的 schema 保证）。
     if (patch.mainProvider !== undefined) stored.mainProvider = patch.mainProvider
@@ -244,6 +300,7 @@ export class RuntimeConfigService {
 
     // apiKey 三态：undefined 不改，null/"" 清空，字符串写入。
     this.writeSecret(LLM_API_KEY_SECRET, patch.llmApiKey)
+    this.writeSecret(EMBED_API_KEY_SECRET, patch.embedLlmApiKey)
     this.writeSecret(KL_API_KEY_SECRET, patch.klLlmApiKey)
 
     this.seedProcessEnv()

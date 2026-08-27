@@ -3,7 +3,7 @@
  *
  * 锁住的性质：
  * 1. 三层解析：用户存的覆盖 > kernel loadConfig 默认层；
- * 2. KL 三项留空回退主配置（`klEffective` 给出实际生效值）；
+ * 2. KL / 向量三项留空回退主配置（`klEffective` / `embedEffective` 给出实际生效值）；
  * 3. 脱敏：apiKey 只给 configured + 后 4 位，明文不出现在视图里；
  * 4. save 后 process.env 被 seed（含 ANTHROPIC_* 别名）；
  * 5. apiKey 三态：undefined 不改、null/"" 清空、字符串写入；
@@ -141,6 +141,53 @@ describe("KL 三项回退主配置", () => {
     const v = ctx.service.view()
     expect(v.klEffective.model).toBe("claude-sonnet-4-6")
     expect(v.klEffective.apiKeyConfigured).toBe(true)
+    ctx.close()
+  })
+})
+
+describe("向量配置回退主配置", () => {
+  it("向量全空时 embedEffective 用主配置", () => {
+    const ctx = makeService()
+    ctx.service.save(
+      { llmBaseUrl: "https://main", modelMain: "glm-5.2", llmApiKey: "sk-main1234" },
+      NOW,
+    )
+    const r = ctx.service.resolved()
+    expect(r.embedBaseUrl).toBe("https://main")
+    expect(r.embedApiKey).toBe("sk-main1234")
+    expect(r.embedModel).toBe("text-embedding-v4")
+    expect(r.embeddingDim).toBe(2048)
+    expect(r.embedSendDimensions).toBe(true)
+    const v = ctx.service.view()
+    expect(v.embedEffective.baseUrl).toBe("https://main")
+    expect(v.embedEffective.apiKeyConfigured).toBe(true)
+    ctx.close()
+  })
+
+  it("向量单独指定时不回退", () => {
+    const ctx = makeService()
+    ctx.service.save(
+      {
+        llmBaseUrl: "https://main",
+        modelMain: "glm-5.2",
+        embedLlmBaseUrl: "https://embed",
+        embedLlmApiKey: "sk-embed9999",
+        embedModel: "text-embedding-3-small",
+        embeddingDim: 1536,
+        embedSendDimensions: false,
+      },
+      NOW,
+    )
+    const r = ctx.service.resolved()
+    expect(r.embedBaseUrl).toBe("https://embed")
+    expect(r.embedApiKey).toBe("sk-embed9999")
+    expect(r.embedModel).toBe("text-embedding-3-small")
+    expect(r.embeddingDim).toBe(1536)
+    expect(r.embedSendDimensions).toBe(false)
+    const v = ctx.service.view()
+    expect(v.embedEffective.model).toBe("text-embedding-3-small")
+    expect(v.embedEffective.embeddingDim).toBe(1536)
+    expect(v.embedEffective.sendDimensions).toBe(false)
     ctx.close()
   })
 })

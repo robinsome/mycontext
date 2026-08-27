@@ -346,8 +346,10 @@ export interface KlGatewayConfig {
   llmProvider?: "openai" | "anthropic"
   embedBaseUrl?: string
   embedModel?: string
-  /** 出网密钥（embedding + LLM 共用网关时同一个）。 */
+  /** LLM 抽取用的出网密钥。embedding 可单独指 embedApiKey。 */
   apiKey?: string
+  /** 向量专用密钥；缺省回退 apiKey。 */
+  embedApiKey?: string
   /**
    * embedding 维度。**必须与网关实际返回的维度一致** —— kl 的 Qdrant 集合按
    * 这个数建，向量维度对不上会在 upsert 时崩（实测网关 text-embedding-v4 默认
@@ -2700,7 +2702,7 @@ export class KlServerService {
         env["KL_EMBED_BASE_URL"] = gw.embedBaseUrl
       if (gw.embedModel !== undefined && gw.embedModel !== "") env["KL_EMBED_MODEL"] = gw.embedModel
       /**
-       * ★★ 出网密钥。embedding 走 `KL_EMBED_API_KEY`；LLM 侧的 key 名**按协议不同**：
+       * ★★ 出网密钥。embedding 走 `KL_EMBED_API_KEY`（可独立于 LLM）；LLM 侧的 key 名**按协议不同**：
        *
        * kl 的 `llm_flash` 配置块里**没有** api_key 字段（见 config.default.yaml），
        * 它靠 `litellm_config.py` 的 `provider_api_key(provider)` 解析：
@@ -2712,8 +2714,14 @@ export class KlServerService {
        * 里 seed 过），翻成 openai 后没人塞 OPENAI_API_KEY。所以这里按协议把**同一把
        * 出网 key**塞到对应的名下 —— embedding 那把与 LLM 那把是同一个网关的同一把。
        */
+      const embedKey =
+        gw.embedApiKey !== undefined && gw.embedApiKey !== ""
+          ? gw.embedApiKey
+          : gw.apiKey
+      if (embedKey !== undefined && embedKey !== "") {
+        env["KL_EMBED_API_KEY"] = embedKey
+      }
       if (gw.apiKey !== undefined && gw.apiKey !== "") {
-        env["KL_EMBED_API_KEY"] = gw.apiKey
         if (gw.llmProvider === "anthropic") env["ANTHROPIC_AUTH_TOKEN"] = gw.apiKey
         else env["OPENAI_API_KEY"] = gw.apiKey
       }

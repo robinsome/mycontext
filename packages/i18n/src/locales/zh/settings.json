@@ -423,6 +423,16 @@
       "inherited": "跟随主配置",
       "protocolHint": "知识库抽取用哪种协议访问网关；测试连接后自动识别，也可手动改。"
     },
+    "embed": {
+      "title": "向量模型自定义",
+      "hint": "留空则和上面主配置一样。只有向量服务与主模型不在同一网关时才需要单独填。",
+      "inherited": "跟随主配置",
+      "embeddingDim": "向量维度",
+      "sendDimensions": "发送 dimensions 参数",
+      "sendDimensionsOn": "开启",
+      "sendDimensionsOff": "关闭",
+      "sendDimensionsHint": "DashScope 等兼容网关通常需要开启，以便 matryoshka 截断到指定维度。"
+    },
     "save": "保存",
     "saveAndNext": "保存并继续",
     "saved": "已保存",

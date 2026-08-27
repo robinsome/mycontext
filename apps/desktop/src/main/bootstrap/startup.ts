@@ -207,6 +207,24 @@ export function resolveKlCredentials(runtimeConfig: RuntimeConfigService): {
   return { base: base.trim(), key: key.trim() }
 }
 
+/** 向量（embedding）网关凭证 —— 留空时回退主配置。 */
+export function resolveEmbedCredentials(runtimeConfig: RuntimeConfigService): {
+  base: string
+  key: string
+  model: string
+  embeddingDim: number
+  sendDimensions: boolean
+} {
+  const r = runtimeConfig.resolved()
+  return {
+    base: r.embedBaseUrl.trim(),
+    key: r.embedApiKey.trim(),
+    model: r.embedModel,
+    embeddingDim: r.embeddingDim,
+    sendDimensions: r.embedSendDimensions,
+  }
+}
+
 /**
  * 自动建图**能不能开** —— 纯判据，导出成函数好测（与 `resolveKlCredentials` 同一个
  * 理由：真正会漂的是判据本身，闭包要整套装配才能测）。
@@ -456,12 +474,14 @@ export function bootstrapApp(mainDir: string): AppContext {
     logger: logger.child("Pipeline"),
     // ★ 网关配置全部从 runtimeConfig 现读（函数）：用户在设置里改了之后，
     // 下次 attach（登录）写出的 handoff.json 就反映新值，不必重启。
-    embedding: () => ({
-      baseUrl: runtimeConfig.resolved().llmBaseUrl,
-      model: runtimeConfig.resolved().embedModel,
-      // 算法侧写死 2048（改了要重建两套向量库）——这是外部约束不是我们的选择
-      dim: 2048,
-    }),
+    embedding: () => {
+      const embed = resolveEmbedCredentials(runtimeConfig)
+      return {
+        baseUrl: embed.base,
+        model: embed.model,
+        dim: embed.embeddingDim,
+      }
+    },
     // 本地索引自用 1024 维，**不作为共享产物**（维度不同，给了也用不了）
     localEmbedding: { model: runtimeConfig.resolved().embedModel, dim: 1024 },
     // LLM 网关与模型名（图谱侧的抽取阶段用同一个）。
@@ -1270,6 +1290,7 @@ export function bootstrapApp(mainDir: string): AppContext {
      */
     gateway: () => {
       const { base, key } = resolveKlCredentials(runtimeConfig)
+      const embed = resolveEmbedCredentials(runtimeConfig)
       const r = runtimeConfig.resolved()
       return {
         // ★ LLM 传输由 kl 侧 provider 决定（anthropic 拼 /v1/messages、openai 拼
@@ -1283,16 +1304,12 @@ export function bootstrapApp(mainDir: string): AppContext {
         // ★ kl 抽取模型：默认回退主模型（glm-5.2）。想给 kl 单独指一个模型就在设置里
         // 填 KL 模型，或用 KL_LLM_MODEL env 覆盖。
         llmModel: process.env["KL_LLM_MODEL"] ?? r.klModel,
-        // ★ embedding 走 OpenAI 兼容：base 要带恰好一个 /v1（litellm 直接 POST
-        // {base}/embeddings；用户配好带 /v1 的 URL 时不能再拼，否则 /v1/v1 → 404）。
-        embedBaseUrl: openAiEmbedBaseUrl(base),
-        embedModel: r.embedModel,
+        embedBaseUrl: openAiEmbedBaseUrl(embed.base),
+        embedModel: embed.model,
         apiKey: key,
-        // ★ 网关（DashScope 兼容）的 text-embedding-v4 默认返回 1024 维，而 kl 默认
-        // 建 4096 维集合 —— 维度对不上会在 Qdrant upsert 时崩。配 2048 + 带 dimensions
-        // 参数（matryoshka 截断），与 kl 侧实跑验证过的口径一致。
-        embeddingDim: 2048,
-        sendDimensions: true,
+        embedApiKey: embed.key,
+        embeddingDim: embed.embeddingDim,
+        sendDimensions: embed.sendDimensions,
       }
     },
     /**
@@ -1386,16 +1403,18 @@ export function bootstrapApp(mainDir: string): AppContext {
       r.klApiKey.trim() !== ""
         ? r.klApiKey
         : (process.env["ANTHROPIC_AUTH_TOKEN"] ?? process.env["ANTHROPIC_API_KEY"] ?? "")
+    const embed = resolveEmbedCredentials(runtimeConfig)
     return {
       llmBaseUrl: base,
       // ★ 协议与主 gateway() 同源（改一处两边都变）：默认 openai，修那个 404 报错。
       llmProvider: r.klProvider,
       llmModel: process.env["KL_LLM_MODEL"] ?? r.klModel,
-      embedBaseUrl: openAiEmbedBaseUrl(base),
-      embedModel: r.embedModel,
+      embedBaseUrl: openAiEmbedBaseUrl(embed.base),
+      embedModel: embed.model,
       apiKey: key,
-      embeddingDim: 2048,
-      sendDimensions: true,
+      embedApiKey: embed.key,
+      embeddingDim: embed.embeddingDim,
+      sendDimensions: embed.sendDimensions,
     }
   }
 
@@ -1486,11 +1505,14 @@ export function bootstrapApp(mainDir: string): AppContext {
           const profile = registry.get(spec.channelId).exportProfile
           return profile === undefined ? {} : { exportProfile: profile }
         })(),
-        embedding: () => ({
-          baseUrl: runtimeConfig.resolved().llmBaseUrl,
-          model: runtimeConfig.resolved().embedModel,
-          dim: 2048,
-        }),
+        embedding: () => {
+          const embed = resolveEmbedCredentials(runtimeConfig)
+          return {
+            baseUrl: embed.base,
+            model: embed.model,
+            dim: embed.embeddingDim,
+          }
+        },
         localEmbedding: { model: runtimeConfig.resolved().embedModel, dim: 1024 },
         llm: () => ({
           baseUrl: runtimeConfig.resolved().klBaseUrl,

@@ -423,6 +423,16 @@
       "inherited": "Follows main settings",
       "protocolHint": "Which protocol the knowledge base uses to reach the gateway. Auto-detected after testing the connection; overridable."
     },
+    "embed": {
+      "title": "Custom embedding settings",
+      "hint": "Leave blank to reuse the main settings above. Fill only when embeddings run on a different service.",
+      "inherited": "Follows main settings",
+      "embeddingDim": "Embedding dimensions",
+      "sendDimensions": "Send dimensions parameter",
+      "sendDimensionsOn": "On",
+      "sendDimensionsOff": "Off",
+      "sendDimensionsHint": "DashScope-compatible gateways usually need this so matryoshka truncation matches the configured dimension."
+    },
     "save": "Save",
     "saveAndNext": "Save and continue",
     "saved": "Saved",

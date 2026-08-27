@@ -4011,6 +4011,12 @@ export const runtimeConfigSecretFieldSchema = z.object({
   source: z.enum(["user", "env", "dotenv", "default"]),
 })
 
+/** 布尔配置项的展示形态（值 + 来源标记）。 */
+export const runtimeConfigBooleanFieldSchema = z.object({
+  value: z.boolean(),
+  source: z.enum(["user", "env", "dotenv", "default"]),
+})
+
 /**
  * 模型网关配置视图。
  *
@@ -4031,6 +4037,11 @@ export const runtimeConfigViewSchema = z.object({
    */
   mainProvider: runtimeConfigProviderFieldSchema,
   embedModel: runtimeConfigFieldSchema,
+  /** 向量专用网关三项。留空表示「回退主配置」。 */
+  embedLlmBaseUrl: runtimeConfigFieldSchema,
+  embedLlmApiKey: runtimeConfigSecretFieldSchema,
+  embeddingDim: runtimeConfigFieldSchema,
+  embedSendDimensions: runtimeConfigBooleanFieldSchema,
   klLlmBaseUrl: runtimeConfigFieldSchema,
   klLlmApiKey: runtimeConfigSecretFieldSchema,
   klModelMain: runtimeConfigFieldSchema,
@@ -4047,6 +4058,14 @@ export const runtimeConfigViewSchema = z.object({
     apiKeyConfigured: z.boolean(),
     /** 实际生效的协议（默认层 ?? 用户覆盖） */
     provider: modelProviderSchema,
+  }),
+  /** 向量配置回退解析后**实际生效**的值 */
+  embedEffective: z.object({
+    baseUrl: z.string(),
+    model: z.string(),
+    apiKeyConfigured: z.boolean(),
+    embeddingDim: z.number().int(),
+    sendDimensions: z.boolean(),
   }),
 })
 
@@ -4067,6 +4086,10 @@ export const saveRuntimeConfigInputSchema = z.object({
   /** 主模型协议。undefined = 不改；两个枚举值之一 = 覆盖 */
   mainProvider: modelProviderSchema.optional(),
   embedModel: z.string().max(200).optional(),
+  embedLlmBaseUrl: z.string().max(2000).optional(),
+  embedLlmApiKey: z.string().max(500).nullable().optional(),
+  embeddingDim: z.number().int().min(1).max(8192).optional(),
+  embedSendDimensions: z.boolean().optional(),
   klLlmBaseUrl: z.string().max(2000).optional(),
   klLlmApiKey: z.string().max(500).nullable().optional(),
   klModelMain: z.string().max(200).optional(),
