@@ -3,20 +3,16 @@ name: Build and Release Desktop App
 on:
   push:
     tags:
-      - 'v*' # 当你推送以 v 开头标签时触发（例如 v1.0.0），会自动生成 Release 并上传安装包
-  workflow_dispatch: # 允许你在 Actions 页面手动点击按钮触发测试打包
-  
-env:
-  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: 'true'
-  
+      - 'v*' # 当推送以 v 开头标签时触发（例如 v1.0.0）
+  workflow_dispatch: # 允许在 Actions 页面手动点击按钮触发测试打包
+
 jobs:
   release:
     name: Build for ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    
     strategy:
       matrix:
-        # 使用三种系统的虚拟机矩阵同时进行构建
+        # macos-14 为 GitHub 官方提供的 Apple Silicon (M1/M2/M3/M4) 运行节点
         os: [macos-14]
 
     steps:
@@ -35,29 +31,17 @@ jobs:
           cache: 'pnpm'
 
       - name: Install dependencies
-        # 使用 --no-frozen-lockfile 避免因微调导致的 lockfile 校验失败
         run: pnpm install --no-frozen-lockfile
 
       - name: Rebuild Native Modules (SQLite)
-        # 核心：必须在打包前针对 Electron 的目标环境重新编译 SQLite 原生 C++ 模块
-        # 这里的 @mycontext/desktop 需与你项目中 apps/desktop/package.json 的 name 字段一致
-        run: pnpm --filter @mycontext/desktop exec electron-builder install-app-deps
+        # 为 macOS ARM64 架构重新编译 SQLite 等原生模块
+        run: pnpm --filter @mycontext/desktop exec electron-builder install-app-deps --arch=arm64
 
       - name: Build Web Frontend Assets
-        # 编译前端 React 资源
         run: pnpm --filter @mycontext/desktop build
 
       - name: Package Desktop Application
-        # 根据当前运行的操作系统，执行对应的 Electron 打包命令
-        # electron-builder 会自动读取环境变量中的 GITHUB_TOKEN，并将打包产物发布到 GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # 提示：如果是 macOS，未配置证书的情况下会打包出未签名的 dmg（本地仍可右键强制打开测试）
-        run: |
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            pnpm --filter @mycontext/desktop exec electron-builder --win --publish always
-          elif [ "${{ matrix.os }}" = "macos-latest" ]; then
-            pnpm --filter @mycontext/desktop exec electron-builder --mac --publish always
-          else
-            pnpm --filter @mycontext/desktop exec electron-builder --linux --publish always
-          fi
+        # 针对 macOS ARM64 进行编译打包并发布
+        run: pnpm --filter @mycontext/desktop exec electron-builder --mac --arm64 --publish always
