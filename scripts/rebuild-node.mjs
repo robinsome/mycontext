@@ -44,10 +44,12 @@ for (const key of Object.keys(env)) {
 }
 
 // pnpm rebuild 会在 .pnpm store 里就地重建，软链自动指向新产物。
+// Windows 上 `pnpm` 是 `.cmd`；shell:false 会 ENOENT（verify 死在 native:node）。
 const result = spawnSync("pnpm", ["rebuild", "better-sqlite3"], {
   cwd: root,
   env,
   stdio: "inherit",
+  shell: process.platform === "win32",
 })
 if (result.error) throw result.error
 if (result.status !== 0) process.exit(result.status ?? 1)
