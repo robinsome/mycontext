@@ -5,10 +5,7 @@
  * 不读真钥匙串、不打真网 —— 全部注入。
  */
 import { describe, expect, it, vi } from "vitest"
-import {
-  parseCursorAgentStatusJson,
-  ensureCursorApiKey,
-} from "@mycontext/agent-runtime"
+import { parseCursorAgentStatusJson, ensureCursorApiKey } from "@mycontext/agent-runtime"
 
 describe("parseCursorAgentStatusJson", () => {
   it("authenticated + 有 token 标记 → authenticated true", () => {

@@ -14,11 +14,7 @@
 import { execFileSync } from "node:child_process"
 import { readFileSync } from "node:fs"
 import { homedir } from "node:os"
-import {
-  FileCredentialStore,
-  getDefaultSdkAuthPath,
-  type StoredSdkCredentials,
-} from "@cursor/sdk"
+import { FileCredentialStore, getDefaultSdkAuthPath, type StoredSdkCredentials } from "@cursor/sdk"
 
 export type CursorCliAuthStatus = {
   authenticated: boolean
@@ -26,12 +22,7 @@ export type CursorCliAuthStatus = {
   hasRefreshToken: boolean
 }
 
-export type CursorCredentialSource =
-  | "explicit"
-  | "env"
-  | "sdk-store"
-  | "cli-login"
-  | "missing"
+export type CursorCredentialSource = "explicit" | "env" | "sdk-store" | "cli-login" | "missing"
 
 export type EnsuredCursorCredential = {
   apiKey: string
@@ -164,10 +155,7 @@ async function defaultLoadSdkStore(): Promise<{ apiKey: string } | undefined> {
   const creds = await store.load()
   if (creds === undefined) return undefined
   if (trimKey(creds.apiKey) === "") return undefined
-  if (
-    creds.apiKeyExpiresAtMs !== undefined &&
-    creds.apiKeyExpiresAtMs <= Date.now()
-  ) {
+  if (creds.apiKeyExpiresAtMs !== undefined && creds.apiKeyExpiresAtMs <= Date.now()) {
     return undefined
   }
   return { apiKey: creds.apiKey }
@@ -210,8 +198,7 @@ export async function ensureCursorApiKey(
   }
 
   const env = options.env ?? process.env
-  const fromEnv =
-    trimKey(env.CURSOR_API_KEY) || trimKey(env.MYCONTEXT_CURSOR_API_KEY)
+  const fromEnv = trimKey(env.CURSOR_API_KEY) || trimKey(env.MYCONTEXT_CURSOR_API_KEY)
   if (fromEnv !== "") {
     return { apiKey: fromEnv, source: "env" }
   }

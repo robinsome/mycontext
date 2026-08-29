@@ -51,19 +51,45 @@ function runNode(label, script, extraArgs = []) {
  * `electron-v{abi}`。对不上就 dlopen 失败 —— 不能猜。
  */
 function electronAbi() {
-  const electronPath = dirname(require.resolve("electron/package.json"))
+  /**
+   * ★ 必须跑 **Electron 二进制** 本身（`require("electron")` 在 Node 里返回的是
+   * 可执行文件路径），不能 `node …/cli.js`：
+   * Windows CI 上后者常拿不到 `process.versions.modules`（空 stdout / 非 0），
+   * 实测 package-windows-x64 因此在「Build Windows x64 packages」一步秒死。
+   */
+  let electronBin
+  try {
+    electronBin = require("electron")
+  } catch (error) {
+    console.error("✗ 解析不到 electron 包：", error instanceof Error ? error.message : error)
+    process.exit(1)
+  }
+  if (typeof electronBin !== "string" || electronBin.trim() === "") {
+    console.error("✗ require('electron') 未返回可执行路径（是否在 Electron 进程里误调了？）")
+    process.exit(1)
+  }
   const probe = spawnSync(
-    process.execPath,
-    [join(electronPath, "cli.js"), "-e", "process.stdout.write(process.versions.modules)"],
+    electronBin,
+    ["-e", "process.stdout.write(String(process.versions.modules||''))"],
     {
       encoding: "utf8",
       env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
-      timeout: 30_000,
+      timeout: 60_000,
     },
   )
   const abi = (probe.stdout ?? "").trim()
   if (probe.status !== 0 || !/^\d+$/.test(abi)) {
-    console.error("✗ 读不到 Electron ABI（process.versions.modules）")
+    const err = (probe.stderr ?? "").trim().slice(0, 400)
+    console.error(
+      [
+        "✗ 读不到 Electron ABI（process.versions.modules）",
+        `  bin=${electronBin}`,
+        `  status=${String(probe.status)} signal=${String(probe.signal)}`,
+        err !== "" ? `  stderr=${err}` : "",
+      ]
+        .filter((line) => line !== "")
+        .join("\n"),
+    )
     process.exit(1)
   }
   return abi
@@ -79,14 +105,20 @@ function swapBetterSqlite3WinNode() {
   const abi = electronAbi()
   const releaseDir = join(pkgRoot, "build", "Release")
   const nodePath = join(releaseDir, "better_sqlite3.node")
-  if (!existsSync(nodePath)) {
-    console.error(`✗ 本机 better-sqlite3.node 不存在：${nodePath}（先 pnpm native:electron）`)
-    process.exit(1)
-  }
+  mkdirSync(releaseDir, { recursive: true })
 
-  const backupDir = mkdtempSync(join(tmpdir(), "mycontext-bs3-"))
-  const backupNode = join(backupDir, "better_sqlite3.node")
-  copyFileSync(nodePath, backupNode)
+  /**
+   * 本机可能还没有 .node（CI 干净安装、或尚未 native:electron）。
+   * 交叉/覆盖场景仍要尽量备份；没有就跳过还原。
+   */
+  let backupNode = null
+  if (existsSync(nodePath)) {
+    const backupDir = mkdtempSync(join(tmpdir(), "mycontext-bs3-"))
+    backupNode = join(backupDir, "better_sqlite3.node")
+    copyFileSync(nodePath, backupNode)
+  } else {
+    console.log("  （本机尚无 better_sqlite3.node，跳过备份；装完预编译即可）")
+  }
 
   /**
    * ★ npm 上的版本与 GitHub Release 预编译不一定对齐。
@@ -148,9 +180,13 @@ function swapBetterSqlite3WinNode() {
   rmSync(staging, { recursive: true, force: true })
 
   return () => {
-    copyFileSync(backupNode, nodePath)
-    rmSync(backupDir, { recursive: true, force: true })
-    console.log("  已还原本机 better-sqlite3.node")
+    if (backupNode !== null && existsSync(backupNode)) {
+      copyFileSync(backupNode, nodePath)
+      rmSync(dirname(backupNode), { recursive: true, force: true })
+      console.log("  已还原本机 better-sqlite3.node")
+      return
+    }
+    console.log("  （无备份可还原）")
   }
 }
 

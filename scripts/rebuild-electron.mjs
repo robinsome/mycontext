@@ -58,9 +58,7 @@ const canLoadBetterSqlite3 = () =>
 // 会被误用 —— 必须用 paths:[root] 钉死本仓库那一份。
 const electronPkgPath = require.resolve("electron/package.json", { paths: [root] })
 const electronVersion = JSON.parse(readFileSync(electronPkgPath, "utf8")).version
-const betterSqlite3Dir = dirname(
-  require.resolve("better-sqlite3/package.json", { paths: [root] }),
-)
+const betterSqlite3Dir = dirname(require.resolve("better-sqlite3/package.json", { paths: [root] }))
 
 // Electron 42 起上游删掉了 postinstall，二进制改由使用方显式调 install-electron 下载。
 // 因此 pnpm install 会干净地成功却留下一个只有 JS 壳的包，electron-vite 随后报

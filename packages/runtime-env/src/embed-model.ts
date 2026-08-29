@@ -223,10 +223,7 @@ function remoteEmbedConfig(base: string, embedModel: string): EmbedGatewayConfig
  * 不是云厂商的 matryoshka 口，固定出 4096、禁止带 `dimensions`。
  * 若仍按 remote 的 2048 写 zvec，Phase A upsert 会 dimension mismatch。
  */
-function loopbackGatewayEmbedConfig(
-  base: string,
-  embedModel: string,
-): EmbedGatewayConfigSlice {
+function loopbackGatewayEmbedConfig(base: string, embedModel: string): EmbedGatewayConfigSlice {
   return {
     embedBaseUrl: normalizeEmbedBaseUrl(base),
     embedModel,

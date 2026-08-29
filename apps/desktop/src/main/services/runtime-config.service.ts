@@ -257,8 +257,7 @@ export class RuntimeConfigService {
       embedLlmApiKey: secret(EMBED_API_KEY_SECRET, "embedLlmApiKey"),
       embeddingDim: {
         value: String(resolved.embeddingDim),
-        source:
-          stored.embeddingDim !== undefined ? "user" : this.defaultSource("embeddingDim"),
+        source: stored.embeddingDim !== undefined ? "user" : this.defaultSource("embeddingDim"),
       },
       embedSendDimensions: {
         value: resolved.embedSendDimensions,
@@ -351,8 +350,7 @@ export class RuntimeConfigService {
     const fromSecret = this.options.secretStore.read(CURSOR_API_KEY_SECRET)?.trim() ?? ""
     const fromDefault = this.options.defaults.values.cursorApiKey.trim()
     const fromBridge = this.bridgedCursorApiKey?.trim() ?? ""
-    const explicit =
-      fromSecret !== "" ? fromSecret : fromBridge !== "" ? fromBridge : fromDefault
+    const explicit = fromSecret !== "" ? fromSecret : fromBridge !== "" ? fromBridge : fromDefault
     const result = await ensureCursorApiKey({
       explicitKey: explicit,
       env: this.options.env ?? process.env,

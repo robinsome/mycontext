@@ -1450,8 +1450,7 @@ export function bootstrapApp(mainDir: string): AppContext {
         apiKey: key,
         embedApiKey: embedCreds.key,
         // 本地旁路用 decide 给出的 4096/false；远程保留用户配置的维度与 dimensions。
-        embeddingDim:
-          embed.mode === "local" ? embed.config.embeddingDim : embedCreds.embeddingDim,
+        embeddingDim: embed.mode === "local" ? embed.config.embeddingDim : embedCreds.embeddingDim,
         sendDimensions:
           embed.mode === "local" ? embed.config.sendDimensions : embedCreds.sendDimensions,
       }
@@ -1594,8 +1593,7 @@ export function bootstrapApp(mainDir: string): AppContext {
         : {}),
       apiKey: key,
       embedApiKey: embedCreds.key,
-      embeddingDim:
-        embed.mode === "local" ? embed.config.embeddingDim : embedCreds.embeddingDim,
+      embeddingDim: embed.mode === "local" ? embed.config.embeddingDim : embedCreds.embeddingDim,
       sendDimensions:
         embed.mode === "local" ? embed.config.sendDimensions : embedCreds.sendDimensions,
     }
