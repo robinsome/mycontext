@@ -2100,11 +2100,11 @@ describe("★ 自动发送：auto_sent 必须真的发出去", () => {
    */
   const WORK_TIME = 1_785_306_600_000
   /** 与「★★ 工作时间可配置」同形：任何时区、任意钟点都落在窗内。 */
-  const ALWAYS_IN_HOURS = {
+  const ALWAYS_IN_HOURS: { days: number[]; startHour: number; endHour: number } = {
     days: [0, 1, 2, 3, 4, 5, 6],
     startHour: 0,
     endHour: 24,
-  } as const
+  }
 
   function sendCli(behavior?: { throws?: unknown }) {
     const calls: string[][] = []
