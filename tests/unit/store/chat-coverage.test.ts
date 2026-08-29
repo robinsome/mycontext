@@ -323,16 +323,23 @@ describe("rebuildFromMessages：存量数据也要能数出来", () => {
     const vault = openTestVault()
     const coverage = new ChatCoverageRepository(vault.db)
     /**
-     * 取本机 UTC 日期 ≠ 本地日期的那个时刻。
+     * 取本机 UTC 日期 ≠ 本地日期的那个时刻（有判别力：去掉 SQL `'localtime'`
+     * 会红）。offset === 0（如 CI `TZ=UTC`）时 UTC 与本地永远同日，找不到
+     * 这种时刻 —— 那时前提自查会恒失败，但核心判据仍成立：SQL day_bucket
+     * 与 toDayBucket 必须一致。
      * · offset < 0（UTC 落后于本地，如 UTC+8）→ 跨天在凌晨；
-     * · offset > 0（UTC 领先，如 UTC-5）→ 跨天在深夜。
+     * · offset > 0（UTC 领先，如 UTC-5）→ 跨天在深夜；
+     * · offset === 0 → 任取本地时刻，只验对齐、不验「UTC≠本地」。
      */
     const probeDay = new Date(2026, 7, 12, 12, 0)
     const early = new Date(2026, 7, 12, 0, 30).getTime()
     const late = new Date(2026, 7, 12, 23, 30).getTime()
-    const crossing = probeDay.getTimezoneOffset() < 0 ? early : late
-    // 前提自查：这个时刻**必须**真的跨天，否则这条断言又变成空跑
-    expect(new Date(crossing).toISOString().slice(0, 10)).not.toBe(toDayBucket(crossing))
+    const offset = probeDay.getTimezoneOffset()
+    const crossing = offset === 0 ? early : offset < 0 ? early : late
+    if (offset !== 0) {
+      // 前提自查：有偏移时这个时刻**必须**真的跨天，否则这条断言又变成空跑
+      expect(new Date(crossing).toISOString().slice(0, 10)).not.toBe(toDayBucket(crossing))
+    }
 
     seed(vault, [{ conv: A, at: crossing }])
     coverage.rebuildFromMessages(CH, 100)

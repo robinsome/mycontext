@@ -2090,8 +2090,21 @@ describe("★ 真发送：四道门 + 失败不改状态", () => {
  * 所以断言的是两张表**互相自洽**：说发了就得有发送记录，说没发就得有原因。
  */
 describe("★ 自动发送：auto_sent 必须真的发出去", () => {
-  /** 周三下午，落在 DEFAULT_WORK_HOURS 内（周日会先被 outside_work_hours 短路）。 */
+  /**
+   * 固定时钟即可 —— 本组不测工作时间闸本身。
+   *
+   * ★ 不依赖 `DEFAULT_WORK_HOURS`：固定毫秒在 UTC 下是周三 06:30（落在
+   * 默认 9–19 之外），CI `TZ=UTC` 会先被 `outside_work_hours` 短路，后面
+   * 的发送断言全变成假绿/假红。真正的工作时间覆盖在「★★ 工作时间可配置」。
+   * 本组在 harness 里把窗口扩成全天，把这一条闸从判据里拿掉。
+   */
   const WORK_TIME = 1_785_306_600_000
+  /** 与「★★ 工作时间可配置」同形：任何时区、任意钟点都落在窗内。 */
+  const ALWAYS_IN_HOURS = {
+    days: [0, 1, 2, 3, 4, 5, 6],
+    startHour: 0,
+    endHour: 24,
+  } as const
 
   function sendCli(behavior?: { throws?: unknown }) {
     const calls: string[][] = []
@@ -2253,6 +2266,8 @@ describe("★ 自动发送：auto_sent 必须真的发出去", () => {
       replyMode: "auto",
       triggerMode: "all",
     })
+    // 见上方 ALWAYS_IN_HOURS：本组测的是发送链路，不是工作时间闸
+    service.limitsSave({ workHours: { ...ALWAYS_IN_HOURS } })
     return { service, clock }
   }
 
@@ -2626,6 +2641,8 @@ describe("★ 自动发送：auto_sent 必须真的发出去", () => {
         replyMode: "auto",
         triggerMode: "all",
       })
+      // 与 serviceReadyToAutoSend 同：别让 outside_work_hours 抢在判定闸前面
+      service.limitsSave({ workHours: { ...ALWAYS_IN_HOURS } })
 
       await runTurn(service, vault, clock)
 
