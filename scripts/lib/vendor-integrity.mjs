@@ -101,7 +101,12 @@ export function findUnlistedFiles(root, dir, sumsFile, { readdirSync, statSync }
         walk(full)
         continue
       }
-      const rel = full.slice(root.length + 1)
+      // Windows 上 join/slice 会得到反斜杠；SHA256SUMS 一律正斜杠。
+      // 不归一化时 check:vendor-integrity 会把整棵 forge 树报成「未登记」。
+      const rel = full
+        .slice(root.length + 1)
+        .split(/[/\\]/)
+        .join("/")
       // SHA256SUMS 自己不可能列出自己的 hash。
       if (rel === sumsFile) continue
       if (!listed.has(rel)) unlisted.push(rel)
