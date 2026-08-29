@@ -88,8 +88,9 @@ export function isAllowlistedTool(kind: "search" | "persona", toolName: string):
  * `/etc/passwd` 与隔壁会话的目录照样被拒。放行的只是
  * 「指向本 workspace 内某个文件的绝对路径」，而那本来就该能读。
  *
- * Windows 盘符形式（`C:/...`）仍然一律拒绝：POSIX 的 `isAbsolute` 认不出它，
- * 于是它会被当成相对路径拼到 workspace 后面，得到一个荒谬但"在内"的判定。
+ * Windows 盘符形式（`C:/...`）：在 **非 Windows** 上拒绝（POSIX 的
+ * `isAbsolute` 认不出它，会当相对路径拼到 workspace 后面）；在 Windows
+ * 上放行（那就是本机的合法绝对路径，ACP 传的就是这种）。
  *
  * ## 还要挡 symlink
  *
@@ -111,9 +112,10 @@ export function isInsideWorkspace(workspaceRoot: string, path: string): boolean 
   // 所以先把 `\` 归一成 `/` 再判。
   const normalized = path.replaceAll("\\", "/")
 
-  // Windows 盘符形式（`C:/...`）直接拒：POSIX 的 isAbsolute 认不出它，
-  // 于是它会被当相对路径拼到 workspace 后面 —— 判定"在内"但语义完全错了。
-  if (/^[a-zA-Z]:/.test(normalized)) return false
+  // 非 Windows 上拒盘符路径：POSIX 的 isAbsolute 认不出 `C:/...`，
+  // 会当相对路径拼到 workspace 后面 —— 判定"在内"但语义全错。
+  // Windows 上盘符是合法绝对路径（ACP 传的就是 `D:\…`），必须放行。
+  if (process.platform !== "win32" && /^[a-zA-Z]:/.test(normalized)) return false
 
   const root = realpathIfPossible(resolve(workspaceRoot))
   // 绝对路径不拼 workspaceRoot（`resolve` 本来也会忽略前面的段），

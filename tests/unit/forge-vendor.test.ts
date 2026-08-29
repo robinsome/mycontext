@@ -162,7 +162,8 @@ describe.skipIf(python === null)("vendor/forge 真的能跑", () => {
         "print(s('100001','org-A'));print(s('100001','org-B'))",
     ])
     expect(result.status, result.stderr).toBe(0)
-    const [a, b] = result.stdout.trim().split("\n")
+    // Windows 上 Python print 是 `\r\n`，按 `\n` 切开后行尾会留 `\r`
+    const [a, b] = result.stdout.trim().split(/\r?\n/)
     expect(a).not.toBe(b)
     expect(a).toMatch(/^user-[0-9a-f]{10}$/)
   })
@@ -174,7 +175,7 @@ describe.skipIf(python === null)("vendor/forge 真的能跑", () => {
         "print(s('100001','org-A'));print(s('100001','org-A'))",
     ])
     expect(result.status, result.stderr).toBe(0)
-    const [a, b] = result.stdout.trim().split("\n")
+    const [a, b] = result.stdout.trim().split(/\r?\n/)
     expect(a).toBe(b)
   })
 
@@ -189,7 +190,7 @@ describe.skipIf(python === null)("vendor/forge 真的能跑", () => {
         "print(s('100001'));print(s('100001',''))",
     ])
     expect(result.status, result.stderr).toBe(0)
-    const [a, b] = result.stdout.trim().split("\n")
+    const [a, b] = result.stdout.trim().split(/\r?\n/)
     expect(a).toBe(b)
   })
 

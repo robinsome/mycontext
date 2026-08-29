@@ -8,8 +8,15 @@
  * 而真实故障恰恰出在"Node 超时时 `error.code`/`signal` 长什么样"这类
  * 我们不能凭记忆断言的细节上。
  *
- * 所以这里造几个 shell 脚本当被测二进制：能精确控制"睡多久""打到哪个流"
+ * 所以这里造几个可执行夹具当被测二进制：能精确控制"睡多久""打到哪个流"
  * "退出码是几"，而且跑得快（毫秒级 sleep）。
+ *
+ * ## Windows
+ *
+ * Unix 用 `#!/bin/sh`；Windows 不能直接 spawn 无扩展名的 shell 脚本，
+ * 也 spawn 不了 `.cmd`（除非 `shell: true`，生产里已按扩展名开启）。
+ * 两边都用 **node 跑一份 .mjs**，Unix 用 sh 包装、Windows 用 .cmd 包装，
+ * 且包装**不把 `--version` 传给 node**（否则 node 会把它当成自己的旗标）。
  *
  * ## 背景：这个函数为什么会有重试
  *
@@ -41,31 +48,42 @@ afterEach(() => {
   dirs.length = 0
 })
 
-/** 造一个可执行的 sh 脚本，返回它的绝对路径。 */
-function script(body: string): string {
+/**
+ * 造一个可执行探针目标。`jsBody` 是被调用时跑的 ESM（可含 top-level await）。
+ * 返回值是传给 `probeBinaryVersion` 的路径。
+ */
+function script(jsBody: string): string {
   const dir = mkdtempSync(join(tmpdir(), "mycontext-probe-"))
   dirs.push(dir)
+  const jsPath = join(dir, "payload.mjs")
+  writeFileSync(jsPath, `${jsBody}\n`, "utf8")
+  if (process.platform === "win32") {
+    const cmdPath = join(dir, "fake-bin.cmd")
+    // 不传 %*：probe 会附加 --version，交给 node 会被当成 node 自己的旗标
+    writeFileSync(cmdPath, `@echo off\r\n"${process.execPath}" "${jsPath}"\r\n`, "utf8")
+    return cmdPath
+  }
   const path = join(dir, "fake-bin")
-  writeFileSync(path, `#!/bin/sh\n${body}\n`)
+  writeFileSync(path, `#!/bin/sh\nexec "${process.execPath}" "${jsPath}"\n`, "utf8")
   chmodSync(path, 0o755)
   return path
 }
 
 describe("probeBinaryVersion · 正常路径", () => {
   it("读 stdout", () => {
-    expect(probeBinaryVersion(script("echo 1.18.11"))).toBe("1.18.11")
+    expect(probeBinaryVersion(script('console.log("1.18.11")'))).toBe("1.18.11")
   })
 
   it("stdout 空但 stderr 有内容 → 用 stderr（有些工具把版本打到 stderr）", () => {
-    expect(probeBinaryVersion(script("echo 1.2.23 >&2"))).toBe("1.2.23")
+    expect(probeBinaryVersion(script('console.error("1.2.23")'))).toBe("1.2.23")
   })
 
   it("两个流都空 → null", () => {
-    expect(probeBinaryVersion(script("exit 0"))).toBeNull()
+    expect(probeBinaryVersion(script("process.exit(0)"))).toBeNull()
   })
 
   it("非零退出但有 stdout → 仍然用它（版本号已经拿到了）", () => {
-    expect(probeBinaryVersion(script("echo 1.18.11; exit 1"))).toBe("1.18.11")
+    expect(probeBinaryVersion(script('console.log("1.18.11"); process.exit(1)'))).toBe("1.18.11")
   })
 
   it("文件不存在 → null（不抛）", () => {
@@ -85,7 +103,10 @@ describe("★ probeBinaryVersion · 慢启动（真实故障的回归）", () =>
     const started = Date.now()
     // 500ms：远超"几百毫秒就该返回"的直觉、又低于上限 —— 正是旧实现会误判、
     // 新实现该成功的那一档。真机冷启动 2.4–3.6s，量级关系相同。
-    const raw = probeBinaryVersion(script("sleep 0.5; echo 1.18.11"), T)
+    const raw = probeBinaryVersion(
+      script('await new Promise((r) => setTimeout(r, 500)); console.log("1.18.11")'),
+      T,
+    )
     expect(raw).toBe("1.18.11")
     // 反证：确认它真的等了（而不是恰好走了别的分支返回了字符串）
     expect(Date.now() - started).toBeGreaterThan(400)
@@ -113,16 +134,19 @@ describe("★ probeBinaryVersion · 慢启动（真实故障的回归）", () =>
   it("首次超时 → 重试一次；重试快了就拿到结果", () => {
     const dir = mkdtempSync(join(tmpdir(), "mycontext-probe-retry-"))
     dirs.push(dir)
-    const marker = join(dir, "warmed")
-    const path = join(dir, "fake-bin")
-    // 第一次：睡到超时并留下 marker。第二次：立刻输出。
-    writeFileSync(
-      path,
-      `#!/bin/sh\nif [ -f "${marker}" ]; then echo 1.18.11; exit 0; fi\ntouch "${marker}"\nsleep 30\n`,
+    const marker = join(dir, "warmed").replaceAll("\\", "/")
+    const raw = probeBinaryVersion(
+      script(
+        [
+          `import { existsSync, writeFileSync } from "node:fs";`,
+          `const marker = ${JSON.stringify(marker)};`,
+          `if (existsSync(marker)) { console.log("1.18.11"); process.exit(0); }`,
+          `writeFileSync(marker, "1");`,
+          `await new Promise((r) => setTimeout(r, 30_000));`,
+        ].join("\n"),
+      ),
+      T,
     )
-    chmodSync(path, 0o755)
-
-    const raw = probeBinaryVersion(path, T)
     expect(raw).toBe("1.18.11")
   }, 20_000)
 
@@ -134,7 +158,7 @@ describe("★ probeBinaryVersion · 慢启动（真实故障的回归）", () =>
    */
   it("一直超时 → 重试一次后返回 null（不无限等）", () => {
     const started = Date.now()
-    const raw = probeBinaryVersion(script("sleep 30"), T)
+    const raw = probeBinaryVersion(script("await new Promise((r) => setTimeout(r, 30_000))"), T)
     expect(raw).toBeNull()
     // 反证：真的试了**两次**（≈2×T），而不是一次就放弃、也不是无限重试。
     const elapsed = Date.now() - started
@@ -149,13 +173,18 @@ describe("★ probeBinaryVersion · 慢启动（真实故障的回归）", () =>
   it("非超时失败不重试（第二次跑会留下痕迹，这里断言没有）", () => {
     const dir = mkdtempSync(join(tmpdir(), "mycontext-probe-once-"))
     dirs.push(dir)
-    const counter = join(dir, "runs")
-    const path = join(dir, "fake-bin")
-    // 每次运行 append 一行，然后什么都不输出、正常退出（= 失败但非超时）。
-    writeFileSync(path, `#!/bin/sh\necho x >> "${counter}"\nexit 0\n`)
-    chmodSync(path, 0o755)
-
-    expect(probeBinaryVersion(path)).toBeNull()
+    const counter = join(dir, "runs").replaceAll("\\", "/")
+    expect(
+      probeBinaryVersion(
+        script(
+          [
+            `import { appendFileSync } from "node:fs";`,
+            `appendFileSync(${JSON.stringify(counter)}, "x\\n");`,
+            `process.exit(0);`,
+          ].join("\n"),
+        ),
+      ),
+    ).toBeNull()
     // 只跑了一次 → 文件里只有一行
     expect(readFileSync(counter, "utf8").trim().split("\n")).toHaveLength(1)
   })

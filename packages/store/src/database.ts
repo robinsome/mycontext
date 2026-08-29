@@ -287,21 +287,32 @@ export function openStore(options: OpenDatabaseOptions): StoreHandle {
     )
   }
 
-  // 内存库不支持 WAL，静默跳过即可。
-  if (path !== ":memory:") db.pragma("journal_mode = WAL")
-  db.pragma("foreign_keys = ON")
-  db.pragma("busy_timeout = 5000")
+  try {
+    // 内存库不支持 WAL，静默跳过即可。
+    if (path !== ":memory:") db.pragma("journal_mode = WAL")
+    db.pragma("foreign_keys = ON")
+    db.pragma("busy_timeout = 5000")
 
-  const applied = runMigrations(db, {
-    ...(logger === undefined ? {} : { logger }),
-    ...(options.now === undefined ? {} : { now: options.now }),
-    ...(options.migrations === undefined ? {} : { migrations: options.migrations }),
-  })
+    const applied = runMigrations(db, {
+      ...(logger === undefined ? {} : { logger }),
+      ...(options.now === undefined ? {} : { now: options.now }),
+      ...(options.migrations === undefined ? {} : { migrations: options.migrations }),
+    })
 
-  return {
-    db,
-    appliedMigrations: applied,
-    appliedVersion: applied.at(-1)?.version ?? 0,
-    close: () => db.close(),
+    return {
+      db,
+      appliedMigrations: applied,
+      appliedVersion: applied.at(-1)?.version ?? 0,
+      close: () => db.close(),
+    }
+  } catch (error) {
+    // ★ 迁移/pragma 失败时必须关掉句柄。Windows 上未 close 的
+    // better-sqlite3 会锁住文件（EBUSY），临时目录删不掉、重开也打不开。
+    try {
+      db.close()
+    } catch {
+      // 关闭失败不掩盖原始错误
+    }
+    throw error
   }
 }

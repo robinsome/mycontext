@@ -12,7 +12,7 @@
  */
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join, sep } from "node:path"
+import { isAbsolute, join, sep } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { VaultStore, type VaultPaths } from "@mycontext/store"
 
@@ -80,7 +80,8 @@ describe("每个落点都在 vault 目录内", () => {
 
   it("路径都是绝对路径（相对路径会落到进程 cwd，也就是仓库目录里）", () => {
     const paths = vaults.paths("vault-a")
-    for (const key of ALL_KEYS) expect(paths[key].startsWith(sep)).toBe(true)
+    // Windows 绝对路径以盘符开头（`D:\…`），不是以 sep 开头
+    for (const key of ALL_KEYS) expect(isAbsolute(paths[key])).toBe(true)
   })
 })
 

@@ -18,11 +18,11 @@
  * ② 路径穿越必须挡住（那是白名单存在的**原本**理由，不能为了①放宽掉）。
  */
 import { describe, expect, it } from "vitest"
-import { join } from "node:path"
+import { join, resolve } from "node:path"
 import { normalizeAllowedRoots, resolveAllowedPath } from "@main/windows/local-file-protocol.js"
 
 /** 照真实布局造：vaults 根 + 三个旧的应用级目录。 */
-const USER_DATA = "/tmp/mycontext-test-userdata"
+const USER_DATA = resolve("/tmp/mycontext-test-userdata")
 const VAULTS_ROOT = join(USER_DATA, "vaults")
 const ROOTS = normalizeAllowedRoots(VAULTS_ROOT, [
   join(USER_DATA, "avatars"),
@@ -44,7 +44,8 @@ describe("★★ vault 内的媒体必须放行（这次的回归）", () => {
     ["联系人头像", join(VAULTS_ROOT, VAULT_ID, "avatars", "0b13ad7f7.jpg")],
     ["用户上传的形象", join(VAULTS_ROOT, VAULT_ID, "uploads", "figure", "a.png")],
   ])("%s 放行", (_label, path) => {
-    expect(resolveAllowedPath(ROOTS, path)).toBe(path)
+    // 生产返回 resolve 后的路径（Windows 会补盘符），与入参字面量可能不同
+    expect(resolveAllowedPath(ROOTS, path)).toBe(resolve(path))
   })
 
   /**
@@ -59,7 +60,7 @@ describe("★★ vault 内的媒体必须放行（这次的回归）", () => {
    */
   it("另一个 vault 的媒体同样放行（白名单是启动时定的，见注释）", () => {
     const other = join(VAULTS_ROOT, "another-vault-id", "media", "x")
-    expect(resolveAllowedPath(ROOTS, other)).toBe(other)
+    expect(resolveAllowedPath(ROOTS, other)).toBe(resolve(other))
   })
 })
 
@@ -76,7 +77,7 @@ describe("旧的应用级目录仍要放行（存量绝对路径）", () => {
     ["旧头像", join(USER_DATA, "avatars", "def.jpg")],
     ["旧上传", join(USER_DATA, "uploads", "self", "x.png")],
   ])("%s 放行", (_label, path) => {
-    expect(resolveAllowedPath(ROOTS, path)).toBe(path)
+    expect(resolveAllowedPath(ROOTS, path)).toBe(resolve(path))
   })
 })
 

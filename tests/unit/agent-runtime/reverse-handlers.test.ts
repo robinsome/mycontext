@@ -221,8 +221,9 @@ describe("★ readTextFile 路径包含判定", () => {
     expect(isInsideWorkspace(s1, join(sibling, "profile.md"))).toBe(false)
   })
 
-  it("拒绝 Windows 盘符与反斜杠形式（判定必须与平台无关）", () => {
+  it("拒绝 workspace 外的 Windows 盘符路径与反斜杠逃逸", () => {
     const { s1 } = makeWorkspace()
+    // 盘符路径在 Windows 上是合法绝对路径，但仍须落在 workspace 内才放行
     expect(isInsideWorkspace(s1, "C:/Windows/x")).toBe(false)
     expect(isInsideWorkspace(s1, "..\\s2\\profile.md")).toBe(false)
   })
