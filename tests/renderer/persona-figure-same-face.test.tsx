@@ -119,6 +119,7 @@ describe("★★ 引导页与草稿署名是同一张脸", () => {
           }}
           onChange={() => {}}
           showNameError={false}
+          personaHostConnected
         />,
       ),
     )

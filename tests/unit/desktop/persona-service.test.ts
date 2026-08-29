@@ -608,7 +608,7 @@ describe("★ 蒸馏产出的 skill 包（forge）", () => {
   it("★ 不同 vault 的产物不会串（画像错人不可逆）", async () => {
     const vault = seed()
     const a = makeForgeSkillRoot()
-    const { service, workspaceRoot, clock } = makeService(vault, {
+    const { service, workspaceRoot, clock, dirs } = makeService(vault, {
       forgeSkillRoot: a,
       llm: recordingLlm([]),
     })

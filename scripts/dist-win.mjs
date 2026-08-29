@@ -29,14 +29,26 @@ const require = createRequire(import.meta.url)
 
 function run(label, command, args) {
   console.log(`\n══ ${label} ══`)
+  /**
+   * Windows 上 `pnpm` / 多数 CLI 是 `.cmd` shim；`shell:false` 时 CreateProcess
+   * 直接失败 → `status=null`、几乎无 stderr（package-windows-x64 曾因此在
+   * electron-vite 一步秒死）。Unix 仍用 shell:false，避免多余 cmd 层。
+   */
   const result = spawnSync(command, args, {
     cwd: root,
     stdio: "inherit",
     env: process.env,
-    shell: false,
+    shell: process.platform === "win32",
   })
-  if (result.status !== 0) {
-    const err = new Error(`${label} 失败（exit ${String(result.status)}）`)
+  if (result.error != null || result.status !== 0) {
+    const detail = [
+      `exit ${String(result.status)}`,
+      result.signal != null ? `signal ${result.signal}` : null,
+      result.error != null ? `spawn ${result.error.message}` : null,
+    ]
+      .filter((part) => part != null)
+      .join(", ")
+    const err = new Error(`${label} 失败（${detail}）`)
     err.exitCode = result.status ?? 1
     throw err
   }

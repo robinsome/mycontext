@@ -33,6 +33,16 @@ jobs:
         shell: bash
 
     steps:
+      # Windows runner 默认 autocrlf=true，checkout 会把仓内 LF 变成 CRLF，
+      # 随后 prettier --check 对几乎所有文件报错。打包流已对 forge 单独纠；
+      # verify 全仓走 Prettier，必须在 checkout 前关掉转换。
+      - name: Force LF checkouts (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4

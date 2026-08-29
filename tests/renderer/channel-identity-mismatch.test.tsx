@@ -76,6 +76,11 @@ function channel(status: AuthStatus, id = "dingtalk"): ChannelSummary {
     stepKeys: [],
     status,
     loginInProgress: false,
+    capabilities: {
+      sendAs: ["self"],
+      domains: ["chat"],
+      isolatedCredentials: false,
+    },
   }
 }
 

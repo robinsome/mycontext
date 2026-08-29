@@ -50,12 +50,12 @@ function fakeFactory(
 }
 
 function makeManager(
-  factory: { create: (spec: ChannelPipelineSpec) => ReturnType<typeof fakeFactory>["create"] },
+  factory: { create: ReturnType<typeof fakeFactory>["create"] },
   options: { isPortFree?: (port: number) => Promise<boolean>; portScanLimit?: number } = {},
 ) {
   return new ChannelPipelineManager<FakeParts>({
     logger,
-    create: factory.create as never,
+    create: factory.create,
     basePort: 8201,
     // 缺省：所有端口都空闲（不去碰真网络栈）
     isPortFree: options.isPortFree ?? (async () => true),

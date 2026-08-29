@@ -1007,7 +1007,7 @@ describe("★★ 选的时间范围要限住测量窗口，不只是采集", () 
      *   而界面上没有任何迹象说画像变了。
      */
     vi.useFakeTimers()
-    const seen: { since?: number | null; windowDays?: number | null }[] = []
+    const seen: { since?: number | null | undefined; windowDays?: number | null | undefined }[] = []
     const { service, vault } = makeService({
       autoIntervalMs: 1000,
       runForge: (_signal, _onStep, since, windowDays) => {

@@ -1,2 +1,5 @@
-# Forge 完整性清单按字节校验；Windows checkout 不能把它转换成 CRLF。
+# 全仓 LF：Windows CI 上 autocrlf 会把检出变成 CRLF，拖垮 prettier --check。
+* text=auto eol=lf
+
+# Forge 完整性清单按字节校验；即使上面规则失效也不能转 CRLF。
 vendor/forge/** text eol=lf

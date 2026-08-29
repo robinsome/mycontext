@@ -163,6 +163,7 @@ function makeKlServer(klRoot: string): KlServerService {
     clock: systemClock,
     logger: noopLogger,
     processes: new ProcessRunner(noopLogger),
+    channelId: "dingtalk",
     klRoot,
     dataDir: DATA_DIR,
     getWindow: () => null,
@@ -310,8 +311,8 @@ describe.skipIf(!ready)("★ ego 图在真实图库上（本机产物，没有�
  * 这三条都只在真库上暴露。
  */
 describe.skipIf(!ready)("★ 事实检索在真实图库上", () => {
-  it("不带任何过滤 → 有结果，且 total ≥ 返回条数", () => {
-    const out = makeService().facts({
+  it("不带任何过滤 → 有结果，且 total ≥ 返回条数", async () => {
+    const out = await makeService().facts({
       days: null,
       types: [],
       entityName: null,
@@ -340,9 +341,9 @@ describe.skipIf(!ready)("★ 事实检索在真实图库上", () => {
    * 所以改成：从一条真实 fact 的正文里取一个 2 字片段当关键词。
    * 判据仍然是「命中的每一条正文里真的有它」——那才是这条要锁的东西。
    */
-  it("★★ 关键词走 FTS 且命中的每一条正文里真的有它（中文已预分词）", () => {
+  it("★★ 关键词走 FTS 且命中的每一条正文里真的有它（中文已预分词）", async () => {
     const service = makeService()
-    const seed = service.facts({
+    const seed = await service.facts({
       days: null,
       types: [],
       entityName: null,
@@ -361,7 +362,7 @@ describe.skipIf(!ready)("★ 事实检索在真实图库上", () => {
     const keyword = body.slice(0, 2)
     expect(keyword.length).toBe(2)
 
-    const out = service.facts({
+    const out = await service.facts({
       days: null,
       types: [],
       entityName: null,
@@ -384,10 +385,10 @@ describe.skipIf(!ready)("★ 事实检索在真实图库上", () => {
    * `*` → `unknown special query`。而抛出来的表现是整块面板降级 ——
    * 用户只是想搜一个带引号的名字。
    */
-  it("★ 敌意关键词不抛、不降级（转义生效）", () => {
+  it("★ 敌意关键词不抛、不降级（转义生效）", async () => {
     const service = makeService()
     for (const keyword of ['a"b', "NEAR(", "*", "沙箱 OR 1=1"]) {
-      const out = service.facts({
+      const out = await service.facts({
         days: null,
         types: [],
         entityName: null,
@@ -406,7 +407,7 @@ describe.skipIf(!ready)("★ 事实检索在真实图库上", () => {
     // 先拿一个真实存在的实体名（ego 图里的邻居）
     const peer = (await service.ego()).nodes.find((n) => n.hop !== 0)
     expect(peer).toBeDefined()
-    const out = service.facts({
+    const out = await service.facts({
       days: null,
       types: [],
       entityName: peer?.name ?? "",
@@ -438,7 +439,7 @@ describe.skipIf(!ready)("★ 事实检索在真实图库上", () => {
      */
     if (out.total > 20) {
       const lastOffset = (Math.ceil(out.total / 20) - 1) * 20
-      const last = service.facts({
+      const last = await service.facts({
         days: null,
         types: [],
         entityName: peer?.name ?? "",
@@ -451,9 +452,9 @@ describe.skipIf(!ready)("★ 事实检索在真实图库上", () => {
     /** ★ kl 冷启动实测约 13s（warmup），5s 默认超时不够。 */
   }, 60_000)
 
-  it("★ 时间范围真的收窄结果（近 7 天 ≤ 全部）", () => {
+  it("★ 时间范围真的收窄结果（近 7 天 ≤ 全部）", async () => {
     const service = makeService()
-    const all = service.facts({
+    const all = await service.facts({
       days: null,
       types: [],
       entityName: null,
@@ -461,7 +462,7 @@ describe.skipIf(!ready)("★ 事实检索在真实图库上", () => {
       limit: 1,
       offset: 0,
     })
-    const week = service.facts({
+    const week = await service.facts({
       days: 7,
       types: [],
       entityName: null,

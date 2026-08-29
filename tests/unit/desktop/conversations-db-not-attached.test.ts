@@ -21,10 +21,13 @@
  */
 import { describe, expect, it, vi } from "vitest"
 import { DistillSourceService } from "@main/services/distill-source.service"
+import type { DistillSourceServiceOptions } from "@main/services/distill-source.service"
 import type { ChannelPlugin } from "@mycontext/channels"
 
 function logger() {
-  return { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }
+  const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), child: vi.fn() }
+  log.child.mockReturnValue(log)
+  return log
 }
 
 /** 一个只有列举能力的渠道桩（这一组验的是合并/降级，与渠道身份无关）。 */
@@ -38,13 +41,14 @@ function plugin(
   } as unknown as ChannelPlugin
 }
 
-function service(options: Partial<Parameters<typeof DistillSourceService>[0]> = {}) {
+function service(options: Partial<DistillSourceServiceOptions> = {}) {
   return new DistillSourceService({
     plugin: plugin("dingtalk", []),
     clock: { now: () => 0 },
     logger: logger(),
+    primaryChannelId: "dingtalk",
     ...options,
-  } as unknown as Parameters<typeof DistillSourceService>[0])
+  })
 }
 
 describe("★★ 主渠道库没挂上时的会话列表", () => {

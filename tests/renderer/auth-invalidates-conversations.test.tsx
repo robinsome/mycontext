@@ -56,7 +56,8 @@ function setup(impl: () => Promise<unknown>) {
 function assertFullInvalidation(spy: ReturnType<typeof vi.spyOn>): void {
   expect(spy).toHaveBeenCalled()
   const everyCallIsFull = spy.mock.calls.every(
-    (call) => call[0] === undefined || (call[0] as { queryKey?: unknown }).queryKey === undefined,
+    (call: unknown[]) =>
+      call[0] === undefined || (call[0] as { queryKey?: unknown }).queryKey === undefined,
   )
   expect(everyCallIsFull).toBe(true)
 }

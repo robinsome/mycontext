@@ -17,6 +17,13 @@ jobs:
     timeout-minutes: 90
 
     steps:
+      # 与 verify 相同：先关 autocrlf，再 checkout，避免整树 CRLF。
+      - name: Force LF checkouts
+        shell: bash
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
       - name: Checkout
         uses: actions/checkout@v4
 

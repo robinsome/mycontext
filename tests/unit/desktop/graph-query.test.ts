@@ -324,6 +324,7 @@ describe("★ ego 图找不到「我」时说人话", () => {
       openDb: () => ({
         entitiesByName: () => [],
         factLinksAround: () => [],
+        allEntities: () => [],
         factConversations: () => [],
         entitiesByIds: () => [],
         searchFacts: () => ({ total: 0, rows: [] }),

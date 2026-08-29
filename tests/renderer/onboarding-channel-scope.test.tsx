@@ -32,7 +32,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { I18nextProvider } from "react-i18next"
 import { createI18n } from "@mycontext/i18n"
 import type { MyContextApi } from "@mycontext/ipc-contract"
-import { SourcesStep } from "../../apps/desktop/src/renderer/features/onboarding/sources-step.js"
+import {
+  SourcesStep,
+  type SourcesDraft,
+} from "../../apps/desktop/src/renderer/features/onboarding/sources-step.js"
 import { PersonaStep } from "../../apps/desktop/src/renderer/features/onboarding/persona-step.js"
 import { DistillStep } from "../../apps/desktop/src/renderer/features/onboarding/distill-step.js"
 
@@ -298,7 +301,7 @@ describe("★★★ 第 4 步列的是「已连渠道」的会话", () => {
   })
 
   it("★★★ 「清空」只清可见的 —— 别渠道的勾选必须留着", async () => {
-    let next: { conversationIds: string[] } | null = null
+    let next: SourcesDraft | null = null
     wrap(
       <SourcesStep
         value={{ ...SOURCES_DRAFT, conversationIds: ["ocFAKE0001", "cidFAKE0001=="] }}
@@ -321,7 +324,8 @@ describe("★★★ 第 4 步列的是「已连渠道」的会话", () => {
       expect(next).not.toBeNull()
     })
     // ★ 核心：飞书那个被清掉，钉钉那个**还在**
-    expect(next?.conversationIds).toEqual(["cidFAKE0001=="])
+    // waitFor 里的 expect 会把外层 `next` 错收窄成 null；经 unknown 取回。
+    expect((next as unknown as SourcesDraft).conversationIds).toEqual(["cidFAKE0001=="])
   })
 
   /**
@@ -406,7 +410,7 @@ describe("★★ 第 3 步：没有能跑分身的渠道时说清楚", () => {
    * `.toString()`。这里按契约的可选语义给 undefined，与真实回填一致
    * （`readPersonaIdentity` 不会产出 null）。
    */
-  const draft = { name: "小助手" }
+  const draft = { name: "小助手", figureSeed: "小助手|0#0" }
 
   it("★★ 显示「当前渠道暂不支持数字分身」", async () => {
     wrap(

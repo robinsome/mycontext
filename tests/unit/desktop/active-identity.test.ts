@@ -20,6 +20,7 @@ import {
   ChannelIdentityVaultRepository,
   openStore,
   SettingsRepository,
+  type ChannelIdentityVaultRecord,
   type StoreHandle,
 } from "@mycontext/store"
 import { ActiveIdentityService, toChannelProfile } from "@main/services/active-identity.service.js"
@@ -45,7 +46,11 @@ function keyOf(corpId: string, userId: string) {
   return { accountId: ACCOUNT, channelId: "dingtalk", corpId, userId }
 }
 
-function makeService(options: { mount?: (vaultId: string) => Promise<void> } = {}) {
+function makeService(
+  options: {
+    mount?: (vaultId: string, identity: ChannelIdentityVaultRecord | null) => Promise<void>
+  } = {},
+) {
   return new ActiveIdentityService({
     identities,
     settings: new SettingsRepository(store.db),

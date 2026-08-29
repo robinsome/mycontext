@@ -45,6 +45,7 @@ function fakePlugin(options: FakeOptions = {}): ChannelPlugin {
       media: false,
       sendAs: ["self"],
       domains: ["chat"],
+      isolatedCredentials: false,
     },
     auth: {
       describeStepKeys: () => ["channels:test.steps.first"],

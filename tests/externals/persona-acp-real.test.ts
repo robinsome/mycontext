@@ -144,7 +144,11 @@ function makeAcp(options: {
     logger,
     runtime,
     processes: new ProcessRunner(logger),
-    workspaceRoot: options.workspaceRoot,
+    dirs: () => ({
+      workspaceRoot: options.workspaceRoot,
+      home: join(options.workspaceRoot, "agent-home"),
+      npmCache: join(options.workspaceRoot, "npm-cache"),
+    }),
     klRoot: options.klRoot,
     klPort: 8200,
     // ★ 与生产同一条路：指目录，不拷副本
@@ -160,12 +164,18 @@ describe.skipIf(!hasOpencode)("★ PersonaAcp：opencode 缺失时 available()=f
       tryResolveOpencode: () => null,
       resolveUsableOpencode: () => ({ ok: false as const, reason: "missing" as const }),
     } as unknown as RuntimeEnv
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "mycontext-pa-no-oc-"))
+    dirs.push(workspaceRoot)
     const acp = new PersonaAcp({
       clock: new ManualClock(1_785_000_000_000),
       logger,
       runtime,
       processes: new ProcessRunner(logger),
-      workspaceRoot: mkdtempSync(join(tmpdir(), "mycontext-pa-no-oc-")),
+      dirs: () => ({
+        workspaceRoot,
+        home: join(workspaceRoot, "agent-home"),
+        npmCache: join(workspaceRoot, "npm-cache"),
+      }),
       klRoot: "/dev/null",
       klPort: 0,
     })
