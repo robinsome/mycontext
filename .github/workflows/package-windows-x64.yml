@@ -24,8 +24,9 @@ jobs:
           git config --global core.autocrlf false
           git config --global core.eol lf
 
+      # ★ action 运行时升到 Node 24（@v4 / upload-artifact@v5 仍是 node20）。
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Preserve Forge integrity bytes
         shell: pwsh
@@ -35,10 +36,10 @@ jobs:
           git checkout -- vendor/forge
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -54,7 +55,7 @@ jobs:
         run: pnpm dist:win
 
       - name: Upload Windows x64 packages
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: MyContext-windows-x64
           path: apps/desktop/release/**
