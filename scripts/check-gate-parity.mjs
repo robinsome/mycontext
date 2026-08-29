@@ -190,18 +190,28 @@ print("seeded")
    * `check:vendor-clean` 会拦它（那条门禁的意义是"vendor 必须逐文件白名单"）。
    *
    * 实测踩到过：第一次跑完这个门禁，`check:vendor-clean` 就红了。
+   *
+   * ★ `PYTHONUTF8` / `PYTHONIOENCODING` —— Windows runner 默认控制台是
+   * cp1252；persona.py `out()` 用 `ensure_ascii=False` 打中文 JSON 时会
+   * `UnicodeEncodeError: 'charmap'…`，verify (windows-latest) 死在本门禁。
    */
+  const pyEnv = {
+    ...process.env,
+    PYTHONDONTWRITEBYTECODE: "1",
+    PYTHONUTF8: "1",
+    PYTHONIOENCODING: "utf-8",
+  }
   execFileSync(py, ["-c", seed], {
     stdio: "pipe",
-    env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" },
+    env: pyEnv,
   })
 
   const run = (args) => {
     const out = execFileSync(py, [join(skillDir, "scripts", "persona.py"), ...args], {
       stdio: "pipe",
       encoding: "utf8",
-      // 同上：产物脚本会 import 它旁边的 imruntime，别留 .pyc
-      env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" },
+      // 同上：产物脚本会 import 它旁边的 imruntime，别留 .pyc；UTF-8 见 pyEnv。
+      env: pyEnv,
     })
     return JSON.parse(out)
   }
