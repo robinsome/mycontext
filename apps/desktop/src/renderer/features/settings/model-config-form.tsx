@@ -127,8 +127,7 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
   const modelValue = modelMain ?? current.modelMain.value
   const embedValue = embedModel ?? current.embedModel.value
   const embedDimValue = embeddingDim ?? String(current.embeddingDim.value)
-  const embedSendDimensionsValue =
-    embedSendDimensions ?? current.embedSendDimensions.value
+  const embedSendDimensionsValue = embedSendDimensions ?? current.embedSendDimensions.value
 
   /**
    * 有没有未保存的改动。

@@ -2769,9 +2769,7 @@ export class KlServerService {
        * 出网 key**塞到对应的名下 —— embedding 那把与 LLM 那把是同一个网关的同一把。
        */
       const embedKey =
-        gw.embedApiKey !== undefined && gw.embedApiKey !== ""
-          ? gw.embedApiKey
-          : gw.apiKey
+        gw.embedApiKey !== undefined && gw.embedApiKey !== "" ? gw.embedApiKey : gw.apiKey
       if (embedKey !== undefined && embedKey !== "") {
         env["KL_EMBED_API_KEY"] = embedKey
       }
