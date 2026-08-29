@@ -552,6 +552,13 @@ describe("★★ 攒批自动建图的接线", () => {
  * 不是 `"backoff"` = 这一轮没被算成失败。
  */
 describe("★★ 建图被主动打断（退出应用 / 停服务）不进退避", () => {
+  /**
+   * Windows + `vitest --coverage` 下一次 append 600 行会慢过默认 5s
+   *（verify 无覆盖率时过；coverage 步曾因此整 job 红）。本 describe 都是
+   * 「两轮 runOnce + 大批量 append」，统一放宽。
+   */
+  const SLOW = 30_000
+
   /** 图已存在 + 攒够阈值 → 每一轮判据都说该建，于是能干净地看出退避有没有生效。 */
   const alwaysBuild = () => ({
     lastBuiltSeq: 0,
@@ -563,7 +570,7 @@ describe("★★ 建图被主动打断（退出应用 / 停服务）不进退避
     minIntervalMs: 0,
   })
 
-  it('★ 返回 "cancelled" → 不算失败，下一轮照常建', async () => {
+  it('★ 返回 "cancelled" → 不算失败，下一轮照常建', { timeout: SLOW }, async () => {
     const vault = openTestVault()
     try {
       appendChanges(vault, 600) // 够 500 条阈值 → lag-threshold
@@ -599,7 +606,7 @@ describe("★★ 建图被主动打断（退出应用 / 停服务）不进退避
     }
   })
 
-  it("对照：返回 false（真失败）→ 下一轮进退避", async () => {
+  it("对照：返回 false（真失败）→ 下一轮进退避", { timeout: SLOW }, async () => {
     const vault = openTestVault()
     try {
       appendChanges(vault, 600)
@@ -622,7 +629,7 @@ describe("★★ 建图被主动打断（退出应用 / 停服务）不进退避
     }
   })
 
-  it("★ 打断不清零已有的失败计数（那一轮什么都没验证）", async () => {
+  it("★ 打断不清零已有的失败计数（那一轮什么都没验证）", { timeout: SLOW }, async () => {
     const vault = openTestVault()
     try {
       appendChanges(vault, 600)
