@@ -1,5 +1,11 @@
 name: Build and Release Desktop App
 
+# macOS arm64 发版包。路径约定见 apps/desktop/electron-builder.yml：
+# 所有 from/files/output 相对**仓库根**；必须从仓库根调 electron-builder，
+# 并显式传 --config。在 apps/desktop 下 `pnpm --filter … exec` 会把
+# projectDir 当成 apps/desktop，产出叠成 apps/desktop/apps/desktop/release，
+# asar 入口 apps/desktop/out/main/index.js 也找不到（run 33280873242 实测）。
+
 on:
   push:
     tags:
@@ -10,12 +16,12 @@ jobs:
   release:
     name: Build for ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
     strategy:
       matrix:
         os: [macos-14]
 
     steps:
-      # ★ action 运行时升到 Node 24（@v4 仍声明 node20）。
       - name: Check out repository
         uses: actions/checkout@v7
 
@@ -28,15 +34,18 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
-      - name: Rebuild Native Modules (SQLite)
-        run: pnpm --filter @mycontext/desktop exec electron-builder install-app-deps --arch=arm64
+      # 与本地 `pnpm dist:mac` 同序：Electron ABI 重建 → bin → 压平 Python → vite。
+      - name: Build app (native + resources + vite)
+        run: pnpm run build:app
 
-      - name: Build Web Frontend Assets
-        run: pnpm --filter @mycontext/desktop build
-
+      # ★ 必须在仓库根执行，并带 --config；不要用 filter exec（见文件头）。
       - name: Package Desktop Application
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm --filter @mycontext/desktop exec electron-builder --mac --arm64 --publish always
+        run: >
+          pnpm exec electron-builder
+          --mac --arm64
+          --publish always
+          --config apps/desktop/electron-builder.yml
