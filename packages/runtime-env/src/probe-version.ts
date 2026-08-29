@@ -67,9 +67,16 @@ export function probeBinaryVersion(binPath: string, timeoutMs = PROBE_TIMEOUT_MS
 
 function attempt(binPath: string, timeoutMs: number): { output: string | null; timedOut: boolean } {
   try {
+    /**
+     * Windows 上 `.cmd` / `.bat` 必须 `shell: true` 才能 spawn（Node 硬限制）；
+     * 真实探针目标是 `.exe`，不走 shell。测试夹具用 `.cmd` 包一层 node 脚本。
+     */
+    const useShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(binPath)
     const result = spawnSync(binPath, ["--version"], {
       encoding: "utf8",
       timeout: timeoutMs,
+      shell: useShell,
+      windowsHide: true,
     })
     // Node 超时的表现：error.code === "ETIMEDOUT"，且 signal 为 SIGTERM。
     const timedOut =

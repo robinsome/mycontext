@@ -71,7 +71,8 @@ describe("Feishu CLI safety boundary", () => {
 
     expect(calls).toHaveLength(1)
     expect(calls[0]?.args).toEqual(["config", "keychain-downgrade"])
-    expect(calls[0]?.env["HOME"]).toContain("inklings-feishu-test-auth/home")
+    // 路径分隔符跟平台走（Windows 是 `\`）
+    expect(calls[0]?.env["HOME"]?.replaceAll("\\", "/")).toContain("inklings-feishu-test-auth/home")
   })
 
   it("does not invoke the macOS-only migration on other platforms", async () => {

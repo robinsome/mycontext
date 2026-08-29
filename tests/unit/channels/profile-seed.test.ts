@@ -102,8 +102,10 @@ describe("seed 出一个只认单个身份的目录", () => {
   /**
    * ★ 权限 600：文件里是身份标识（corpId/userId）。不是凭据（token 在钥匙串），
    * 但也没有任何理由让同机其他用户读到。
+   *
+   * Windows 无 Unix 权限位（chmod 之后 mode 仍是 666 一类），跳过。
    */
-  it("权限收紧到 600", () => {
+  it.skipIf(process.platform === "win32")("权限收紧到 600", () => {
     seedChannelProfile(dir, { corpId: CORP_A, userId: USER_A })
     expect(statSync(file()).mode & 0o777).toBe(0o600)
   })

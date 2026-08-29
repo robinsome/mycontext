@@ -125,10 +125,13 @@ describe("tryReadSdkAuthApiKeySync", () => {
     const { join } = await import("node:path")
     const { tmpdir } = await import("node:os")
     const { tryReadSdkAuthApiKeySync } = await import("@mycontext/agent-runtime")
-    // 通过改 HOME 指向临时目录，让 getDefaultSdkAuthPath 落到我们写的文件
+    // 通过改 HOME/USERPROFILE 指向临时目录，让 getDefaultSdkAuthPath
+    // （内部 `os.homedir()`）落到我们写的文件。Windows 优先读 USERPROFILE。
     const home = mkdtempSync(join(tmpdir(), "mycontext-sdk-auth-"))
-    const prev = process.env.HOME
+    const prevHome = process.env.HOME
+    const prevProfile = process.env.USERPROFILE
     process.env.HOME = home
+    process.env.USERPROFILE = home
     try {
       const dir = join(home, ".cursor", "sdk")
       const { mkdirSync } = await import("node:fs")
@@ -146,8 +149,10 @@ describe("tryReadSdkAuthApiKeySync", () => {
       )
       expect(tryReadSdkAuthApiKeySync()).toBe("sk-cached")
     } finally {
-      if (prev === undefined) delete process.env.HOME
-      else process.env.HOME = prev
+      if (prevHome === undefined) delete process.env.HOME
+      else process.env.HOME = prevHome
+      if (prevProfile === undefined) delete process.env.USERPROFILE
+      else process.env.USERPROFILE = prevProfile
       rmSync(home, { recursive: true, force: true })
     }
   })

@@ -6,7 +6,7 @@
  * （`not_configured` 有下划线、`client_id` 那种措辞完全不同）。
  */
 import { describe, expect, it } from "vitest"
-import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs"
+import { existsSync, mkdtempSync, writeFileSync, mkdirSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { FeishuAuth } from "../../../packages/channels/src/plugins/feishu/auth.js"
@@ -16,7 +16,19 @@ import { ProcessRunner } from "../../../packages/runtime-env/src/index.js"
 const noopLogger = (): never =>
   ({ debug() {}, info() {}, warn() {}, error() {}, child: () => noopLogger() }) as never
 
-describe("重新授权的自愈路径（真 CLI）", () => {
+/** 跟宿主 OS 对齐的随包 CLI；缺二进制就跳过（例如只拉了部分资源）。 */
+function hostLarkCli(): { platform: NodeJS.Platform; executable: string } | null {
+  const platform = process.platform
+  const arch = process.arch === "arm64" ? "arm64" : "x64"
+  const name = platform === "win32" ? `lark-cli-win32-${arch}.exe` : `lark-cli-${platform}-${arch}`
+  const executable = join("apps/desktop/resources/bin", name)
+  if (!existsSync(executable)) return null
+  return { platform, executable }
+}
+
+const host = hostLarkCli()
+
+describe.skipIf(host === null)("重新授权的自愈路径（真 CLI）", () => {
   it("★★ 配置残缺时 login 会先跑 config init（不再撞 not_configured 死掉）", async () => {
     const root = mkdtempSync(join(tmpdir(), "mycontext-reauth-"))
     // 造出 `config remove` 之后的真实残留形态（实测：文件在、apps 为空）
@@ -48,8 +60,8 @@ describe("重新授权的自愈路径（真 CLI）", () => {
       } as never,
       logger: noopLogger(),
       authRoot: () => root,
-      executable: "apps/desktop/resources/bin/lark-cli-darwin-arm64",
-      platform: "darwin" as const,
+      executable: host!.executable,
+      platform: host!.platform,
       openExternal: async () => undefined,
     }
     const auth = new FeishuAuth(options, new LarkCli(options))
@@ -65,16 +77,20 @@ describe("重新授权的自愈路径（真 CLI）", () => {
     /**
      * ★ 断言**整条序列**而不只是"含 config init"。
      *
-     * 实测这个序列是：
+     * 实测这个序列是（macOS）：
      *
      *     config keychain-downgrade  →  auth login  →  config init
      *                                       ↑              ↑
      *                              撞 not_configured    自愈：去绑应用
      *
-     * 修复前它停在第二步 —— 用户点多少次「重新授权」都是同一句英文报错。
+     * Windows / Linux 没有钥匙串降级步，从 `auth login` 起。
      * 把顺序也锁住：`config init` 必须在 `auth login` **之后**
      * （提前跑等于每次授权都强迫用户重选应用，那是另一个 bug）。
      */
-    expect(cmds).toEqual(["config keychain-downgrade", "auth login", "config init"])
+    const expected =
+      host!.platform === "darwin"
+        ? ["config keychain-downgrade", "auth login", "config init"]
+        : ["auth login", "config init"]
+    expect(cmds).toEqual(expected)
   }, 60_000)
 })

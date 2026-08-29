@@ -30,6 +30,7 @@
  * 裸 `kl` 挂掉 —— 报错指向一个**不存在的 checkout**，而界面上服务显示「就绪」。
  * 所以两个入口的一致性要逐个函数锁，不能只锁一个就以为这类问题过去了。
  */
+import { dirname } from "node:path"
 import { describe, expect, it } from "vitest"
 import { createLogger } from "@mycontext/kernel"
 import { ensurePythonEnv, type PythonEnvModule } from "@main/services/python-env.js"
@@ -156,7 +157,7 @@ describe("ensurePythonEnv", () => {
       return Promise.resolve(module)
     })
 
-    // 用字面量而不是 join(KL_ROOT, "..")：后者等于把被测逻辑抄一遍
-    expect(seen).toEqual(["/fake/repo"])
+    // 用 dirname 而不是字面量：Windows 上 join 会把 `/fake/...` 收成 `\fake\...`
+    expect(seen).toEqual([dirname(KL_ROOT)])
   })
 })
