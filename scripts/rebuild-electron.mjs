@@ -4,7 +4,17 @@
  *
  * 与 rebuild-node.mjs 互斥：两者 ABI 不同，切换用途时需重新执行对应脚本。
  *
- * HOME 指向临时目录：electron-rebuild 会在 HOME 下缓存 headers，
+ * ## ★★★ 为什么不用 `electron-rebuild -w better-sqlite3` 扫整棵树
+ *
+ * `electron-rebuild` 会沿 Node 的 module path 往上走，把
+ * `$HOME/node_modules/.../better-sqlite3` 也当成要重建的副本。
+ * 本机若装过别的项目的旧版，那一份没有 Electron 42+/V8 14 的兼容补丁，
+ * 整次重建在那份上失败 —— 而仓库里那份其实能编过。
+ *
+ * 正确做法：`require.resolve` 定位**本仓库**解析到的那一份，只对它跑
+ * `node-gyp rebuild`（带 electron headers）。一份、一个 ABI、不会串。
+ *
+ * HOME 指向临时目录：node-gyp 会在 HOME 下缓存 headers，
  * 隔离掉用户环境里可能存在的旧缓存。
  */
 import { spawnSync } from "node:child_process"
@@ -44,10 +54,10 @@ const canLoadBetterSqlite3 = () =>
   ).status === 0
 
 // pnpm 不把依赖平铺到 node_modules/<name>，必须按解析路径找 package.json。
+// 且 Node 会从 cwd 向上找模块，用户 HOME 下若另有 better-sqlite3（常见旧版）
+// 会被误用 —— 必须用 paths:[root] 钉死本仓库那一份。
 const electronPkgPath = require.resolve("electron/package.json", { paths: [root] })
 const electronVersion = JSON.parse(readFileSync(electronPkgPath, "utf8")).version
-// pnpm 不把依赖平铺到 node_modules/<name>；且 Node 会从 cwd 向上找模块，
-// 用户 HOME 下若另有 better-sqlite3（常见旧版）会被 electron-rebuild 误用。
 const betterSqlite3Dir = dirname(
   require.resolve("better-sqlite3/package.json", { paths: [root] }),
 )
@@ -81,18 +91,30 @@ if (existsSync(stampPath) && readFileSync(stampPath, "utf8").trim() === stamp) {
 const electronHome = join(tmpdir(), "mycontext-electron-home")
 mkdirSync(electronHome, { recursive: true })
 
-// 用 main 入口反推 lib/ 目录再拼 cli.js：@electron/rebuild 的 exports 没暴露
-// ./lib/cli.js，require.resolve 直接解析会 ERR_PACKAGE_PATH_NOT_EXPORTED。
-const electronRebuildCli = join(dirname(require.resolve("@electron/rebuild")), "cli.js")
-const result = runNode(
-  electronRebuildCli,
-  ["-f", "-m", betterSqlite3Dir, "-v", electronVersion],
-  {
-    cwd: root,
-    env: { ...process.env, HOME: electronHome, USERPROFILE: electronHome },
-    stdio: "inherit",
+/**
+ * ★ 只重建本仓库 resolve 到的那一份（见文件头）。
+ *
+ * 用 `createRequire` 定位 `node-gyp/bin/node-gyp.js`，再用 `node` 跑它 ——
+ * 不走 `.bin/node-gyp` 那个 shell 包装：在某些环境里 spawn 那个包装
+ * 会被当成 JS 入口（Node 去 parse `#!/bin/sh` → SyntaxError）；
+ * 也不走 `.cmd` shim（Windows 上 Node 直接 spawn `.cmd` 会 EINVAL）。
+ */
+const nodeGypJs = require.resolve("node-gyp/bin/node-gyp.js")
+
+const result = spawnSync(process.execPath, [nodeGypJs, "rebuild", "--release"], {
+  cwd: betterSqlite3Dir,
+  env: {
+    ...process.env,
+    HOME: electronHome,
+    USERPROFILE: electronHome,
+    npm_config_runtime: "electron",
+    npm_config_target: electronVersion,
+    npm_config_disturl: "https://electronjs.org/headers",
+    npm_config_arch: process.arch,
+    npm_config_target_arch: process.arch,
   },
-)
+  stdio: "inherit",
+})
 if (result.error) throw result.error
 if (result.status !== 0) process.exit(result.status ?? 1)
 if (!canLoadBetterSqlite3()) {

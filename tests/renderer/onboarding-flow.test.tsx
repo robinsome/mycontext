@@ -327,6 +327,8 @@ function installApi(steps: OnboardingStepView[]): Recorded {
             embeddingDim: 2048,
             sendDimensions: true,
           },
+          cursorApiKey: { configured: false, tail: null, source: "default" as const },
+          cursorRuntime: { value: "local" as const, source: "default" as const },
         }),
       save: () => ok({ appliedNow: true, needsRestart: [] as ("agent" | "klServer")[] }),
       /**
@@ -421,8 +423,8 @@ describe("★ 模型那一步：用交互承载信息，不是堆 tips", () => {
     await waitFor(() => {
       expect(screen.getAllByLabelText("接口地址").length).toBeGreaterThan(0)
     })
-    // 桩里 configured:false → 显示「未配置」这个短标签
-    expect(screen.getByText("未配置")).toBeTruthy()
+    // 桩里 configured:false → 显示「未配置」短标签（网关 key + Agent key 都可能出现）
+    expect(screen.getAllByText("未配置").length).toBeGreaterThanOrEqual(1)
     // 首版那句整行描述不该还在
     expect(screen.queryByText(/尚未配置/)).toBeNull()
   })
