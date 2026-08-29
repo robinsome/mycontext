@@ -86,7 +86,7 @@ const DEFINITIONS = {
   llmApiKey: { env: "MYCONTEXT_LLM_API_KEY", default: "", sensitive: true },
   modelMain: { env: "MYCONTEXT_MODEL_MAIN", default: "glm-5.2", sensitive: false },
   /**
-   * 主模型访问网关用的协议（litellm 传输）。
+   * 主模型访问网关用的协议（OpenAI / Anthropic HTTP 传输）。
    *
    * ★ 默认 `openai`（OpenAI 兼容口，绝大多数网关都讲）。opencode 子进程与直连
    * `LlmClient` 都按它切传输：anthropic → `/v1/messages`（`@ai-sdk/anthropic`），
@@ -126,7 +126,7 @@ const DEFINITIONS = {
   klLlmApiKey: { env: "MYCONTEXT_KL_LLM_API_KEY", default: "", sensitive: true },
   klModelMain: { env: "MYCONTEXT_KL_MODEL_MAIN", default: "", sensitive: false },
   /**
-   * KL 抽取访问网关用的协议（litellm 传输）。
+   * KL 抽取访问网关用的协议（OpenAI / Anthropic HTTP 传输）。
    *
    * ★ 默认 `openai` —— 这是本项目与 kl-graph 自身默认（`anthropic`）**故意的分歧**：
    * kl-graph 给上游用户保守默认成 anthropic，而 MyContext 随包/常见网关是 OpenAI 兼容
@@ -136,6 +136,15 @@ const DEFINITIONS = {
    * anthropic 网关时在设置里改，或用 `MYCONTEXT_KL_PROVIDER=anthropic` 覆盖。
    */
   klProvider: { env: "MYCONTEXT_KL_PROVIDER", default: "openai", sensitive: false },
+  /**
+   * Agent 运行时（@cursor/sdk）API Key。空 = Agent 对话降级（本地召回）。
+   * 也可用环境变量 `CURSOR_API_KEY` / `MYCONTEXT_CURSOR_API_KEY`。
+   */
+  cursorApiKey: { env: "MYCONTEXT_CURSOR_API_KEY", default: "", sensitive: true },
+  /**
+   * Cursor Agent runtime：`local`（默认）或 `cloud`。设置里可切（A3）。
+   */
+  cursorRuntime: { env: "MYCONTEXT_CURSOR_RUNTIME", default: "local", sensitive: false },
 } satisfies Record<string, ConfigDefinition>
 
 export type ConfigKey = keyof typeof DEFINITIONS
@@ -166,6 +175,8 @@ export const appConfigSchema = z.object({
   // 协议只有两个合法值。内联写死不引 ipc-contract（那是错误的依赖方向）——
   // 两个 2 值枚举保持一致，漂移风险低。
   klProvider: z.enum(["openai", "anthropic"]),
+  cursorApiKey: z.string(),
+  cursorRuntime: z.enum(["local", "cloud"]),
 })
 
 export type AppConfig = z.infer<typeof appConfigSchema>
@@ -228,6 +239,25 @@ export function loadConfig(input: LoadConfigInput = {}): LoadedConfig {
     if (fromEnv !== undefined && fromEnv.trim() !== "") {
       value = fromEnv
       source = "env"
+    }
+
+    /**
+     * Agent API Key：也认上游 SDK 常用的 `CURSOR_API_KEY`。
+     * 仅当 `MYCONTEXT_CURSOR_API_KEY` 未设时兜底 —— 两者同义，不互相覆盖。
+     * ★ 必须在 loadConfig 做，不能在 RuntimeConfigService 对「自己 seed 进
+     * 去的那份 env」再读一遍，否则清空 secret 后 seed 会把旧值又写回去。
+     */
+    if (key === "cursorApiKey" && source === "default") {
+      const altDotenv = dotenv["CURSOR_API_KEY"]
+      if (altDotenv !== undefined && altDotenv.trim() !== "") {
+        value = altDotenv
+        source = "dotenv"
+      }
+      const altEnv = env["CURSOR_API_KEY"]
+      if (altEnv !== undefined && altEnv.trim() !== "") {
+        value = altEnv
+        source = "env"
+      }
     }
 
     raw[key] = coerce(key, value)

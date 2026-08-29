@@ -102,20 +102,24 @@ function flattenedPython(repoRoot) {
  * （那是建 venv 用的**基础**解释器，它的 site-packages 里只有 pip）。
  * 那样会让开发态误以为已经压平，然后拿一个没装依赖的解释器去跑 kl。
  *
- * 所以拿一个**必需依赖**当探针。用 `qdrant_client`：kl 的核心依赖，
- * `kl_server.py` 顶部就 import 它，缺了它这套环境无论如何都跑不起来。
+ * 所以拿**必需依赖**当探针。曾经只用 `qdrant_client`，但上游默认向量后端
+ * 已切到 `zvec`（requirements 里 qdrant 是注释掉的 optional）。交叉打 Windows
+ * 包时 site-packages 里就没有 qdrant —— 若仍只认它，打包态会被当成「未压平」
+ * 去建 venv / 联网 pip（而 .app / 安装目录可能只读）。
+ * `zvec` / `qdrant_client` / `fastapi`（kl-server 硬依赖）任一在即可。
  */
 function hasFlattenedPython(repoRoot) {
   const exe = flattenedPython(repoRoot)
   if (!existsSync(exe)) return false
+  const probes = ["zvec", "qdrant_client", "fastapi"]
   const pythonRoot = join(pythonCacheDir(repoRoot), "python")
   for (const libName of ["lib", "Lib"]) {
     const libDir = join(pythonRoot, libName)
     if (!existsSync(libDir)) continue
-    if (existsSync(join(libDir, "site-packages", "qdrant_client"))) return true
+    if (probes.some((p) => existsSync(join(libDir, "site-packages", p)))) return true
     for (const entry of readdirSync(libDir)) {
       if (!entry.toLowerCase().startsWith("python")) continue
-      if (existsSync(join(libDir, entry, "site-packages", "qdrant_client"))) return true
+      if (probes.some((p) => existsSync(join(libDir, entry, "site-packages", p)))) return true
     }
   }
   return false
@@ -238,7 +242,7 @@ export function isPythonEnvReady(repoRoot) {
  *
  * · **console-script 的 shebang** —— pip 装的每个带命令的包都会在 `bin/` 放一个
  *   小 py 脚本，第一行是 `#!<venv>/bin/python3`。本仓库里有 23 个
- *   （`pip` `uvicorn` `litellm` `fastapi` `tqdm` `nltk` …）。
+ *   （`pip` `uvicorn` `httpx` `fastapi` `tqdm` `nltk` …）。
  * · **`activate` / `activate.csh` / `activate.fish`** —— 里面 `VIRTUAL_ENV=<venv>`
  *   是绝对路径（`Activate.ps1` 本来就自定位，不用改）。
  *
@@ -604,7 +608,7 @@ export function relocateVenv(repoRoot) {
  * 'encodings'`（真机踩过）。能 import 它就说明 stdlib 定位对了。
  *
  * 用 `-S` 跳过 site-packages：我们只关心**解释器本身**能不能起来，
- * 而 site 的加载会去读一堆 `.pth`（`litellm` 之类有慢的），没必要在启动路径上等。
+ * 而 site 的加载会去读一堆 `.pth`（重型依赖之类有慢的），没必要在启动路径上等。
  *
  * 任何异常（解释器文件不在、spawn 失败、超时）都返回 false —— 让调用方
  * 走"补 `home =`"那条保守路径。宁可多写一行配置，也不要让环境起不来。
