@@ -94,7 +94,10 @@ def _rx(pattern: str):
 
 
 def out(obj: dict, code: int = 0) -> int:
-    print(json.dumps(obj, ensure_ascii=False, indent=2))
+    # Windows 控制台常是 cp1252：print(中文 JSON) 会 UnicodeEncodeError，
+    # 管道对端（Node execFileSync encoding=utf8）其实要的是 UTF-8 字节。
+    payload = (json.dumps(obj, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+    sys.stdout.buffer.write(payload)
     return code
 
 
