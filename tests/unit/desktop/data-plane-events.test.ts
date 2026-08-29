@@ -160,11 +160,18 @@ function makeDataPlane(events: ReturnType<typeof makeFakeEvents>) {
   return { vault, service }
 }
 
+const FAKE_FEED_DIRS = {
+  dataRoot: "/tmp/mycontext-feed-fake",
+  exportRoot: "/tmp/mycontext-feed-fake/export",
+  klRoot: "/tmp/mycontext-feed-fake/kl",
+  handoffFile: "/tmp/mycontext-feed-fake/handoff.json",
+}
+
 describe("DataPlaneService × 事件通路接线", () => {
   it("★ 事件叫醒 → 定向补拉 → 正文真的落库（事件不落库，正文走采集）", async () => {
     const events = makeFakeEvents()
     const { vault, service } = makeDataPlane(events)
-    await service.attach(vault.db, vault.path)
+    await service.attach(vault.db, vault.path, FAKE_FEED_DIRS)
 
     // 起 attach 时事件流应已 start。
     expect(events.started()).toBe(true)
@@ -186,7 +193,7 @@ describe("DataPlaneService × 事件通路接线", () => {
   it("事件通路健康出现在 snapshot（能看出'接通但零投递'）", async () => {
     const events = makeFakeEvents()
     const { vault, service } = makeDataPlane(events)
-    await service.attach(vault.db, vault.path)
+    await service.attach(vault.db, vault.path, FAKE_FEED_DIRS)
 
     const snap = service.snapshot()
     expect(snap.eventStream).not.toBeNull()
@@ -210,7 +217,7 @@ describe("DataPlaneService × 事件通路接线", () => {
   it("★ 订阅覆盖面（event list + status 对账）出现在 snapshot", async () => {
     const events = makeFakeEvents()
     const { vault, service } = makeDataPlane(events)
-    await service.attach(vault.db, vault.path)
+    await service.attach(vault.db, vault.path, FAKE_FEED_DIRS)
     // audit 是 attach 后异步算的（刻意不 await，不拖慢登录）——等它落下来。
     await new Promise((r) => setTimeout(r, 20))
 
@@ -243,7 +250,7 @@ describe("DataPlaneService × 采集周期可配", () => {
   it("默认探针周期是 10s", async () => {
     const events = makeFakeEvents()
     const { vault, service } = makeDataPlane(events)
-    await service.attach(vault.db, vault.path)
+    await service.attach(vault.db, vault.path, FAKE_FEED_DIRS)
 
     expect(service.intervals().probeBaseMs).toBe(10_000)
 
@@ -254,7 +261,7 @@ describe("DataPlaneService × 采集周期可配", () => {
   it("★ 只改一项 → 其余不被擦回缺省，且保存后生效", async () => {
     const events = makeFakeEvents()
     const { vault, service } = makeDataPlane(events)
-    await service.attach(vault.db, vault.path)
+    await service.attach(vault.db, vault.path, FAKE_FEED_DIRS)
 
     await service.intervalsSave({ pullMs: 60_000 })
     let after = service.intervals()

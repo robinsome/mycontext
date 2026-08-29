@@ -105,6 +105,7 @@ function makeService(options: {
     clock: options.clock,
     logger: options.logger ?? logger,
     processes: options.runner.processes,
+    channelId: "dingtalk",
     klRoot: "/fake/kl-graph",
     dataDir: options.dataDir ?? "/tmp/mycontext-kl-test-data",
     getWindow: () => window,
@@ -616,6 +617,12 @@ function snap(over: Partial<KlIngestSnapshot> = {}): KlIngestSnapshot {
     percent: 1,
     error: "",
     counts: { entities: 15, facts: 23, edges: 125 },
+    volume: {
+      unitsDiscovered: 0,
+      unitsSkipped: 0,
+      unitsProcessed: 0,
+      chunksCreated: 0,
+    },
     ...over,
   }
 }
@@ -1032,6 +1039,7 @@ describe("KlServerService · 建图（rebuildGraph 走 server 的 /ingest）", (
       // Phase A 成功的形状：chunks 有 3847 行，entities/facts 全 0
       openGraphDb: () => ({
         count: (table) => (table === "chunks" ? 3847 : 0),
+        columns: () => [],
         groupBy: () => [],
         topEntities: () => [],
         recentFacts: () => [],
@@ -1626,6 +1634,7 @@ describe("★★ 有实体但零事实 → 判失败（抽取缓存被污染）"
       readStatus: async () => snap({ counts: { entities: 120, facts: 0, edges: 0 } }),
       openGraphDb: () => ({
         count: (t) => (t === "entities" ? 120 : t === "chunks" ? 3905 : 0),
+        columns: () => [],
         groupBy: () => [],
         topEntities: () => [],
         recentFacts: () => [],
@@ -2143,7 +2152,7 @@ describe("★★★ 关系读取：响应字段名读错就是恒空（静默降
 
   it("★★ 直连邻居从 /entity 的 edges 取，且按 id 找回自己那一行", async () => {
     const runner = fakeRunner()
-    const service = makeService({ clock, runner })
+    const service = makeService({ clock, runner, probeHealth: async () => true })
     /**
      * `/entity` 是**搜索**接口，同名可能多条（实测某个名字 count=3）。
      * 取 `results[0]` 会在同名时挑错人 —— 这里放两条、目标在**第二条**。
@@ -2170,7 +2179,7 @@ describe("★★★ 关系读取：响应字段名读错就是恒空（静默降
 
   it("★ 单个实体读不到关系时返回空，不抛（不该让整块变红字）", async () => {
     const runner = fakeRunner()
-    const service = makeService({ clock, runner })
+    const service = makeService({ clock, runner, probeHealth: async () => true })
     vi.stubGlobal("fetch", async () => {
       throw new Error("connect ECONNREFUSED")
     })

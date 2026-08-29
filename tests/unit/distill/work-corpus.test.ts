@@ -21,7 +21,8 @@ import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { LLM_FACETS, readWorkCorpus, renderWorkBlock, resolveEvidence } from "@mycontext/distill"
-import type { MessageRow, WorkCorpusItem } from "@mycontext/distill"
+import type { WorkCorpusItem } from "@mycontext/distill"
+import type { MessageRow } from "@mycontext/store"
 import { openTestVault } from "../../helpers/vault.js"
 
 const BASE = 1_785_000_000_000

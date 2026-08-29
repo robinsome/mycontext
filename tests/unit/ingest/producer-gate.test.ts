@@ -22,13 +22,16 @@
  */
 import { describe, expect, it } from "vitest"
 import { createLogger, ManualClock } from "@mycontext/kernel"
-import { DistillSourceRepository, type ScopedDomain } from "@mycontext/store"
+import { DistillSourceRepository, type DistillSourceKind } from "@mycontext/store"
 import { ProducerRunner, type DomainProducer } from "@mycontext/ingest"
 import { openTestVault, type TestVault } from "../../helpers/vault.js"
 
 const CH = "dingtalk"
 const NOW = 1_785_000_000_000
 const DAY = 86_400_000
+
+/** 闸门用例只覆盖这三个域（与 distill_sources.kind 对齐，不含 contact）。 */
+type GateDomain = Extract<DistillSourceKind, "chat" | "minutes" | "doc">
 
 /** 一个最小的 item：只有 runner 真的会读的两个标量。 */
 interface Item {
@@ -44,7 +47,7 @@ interface Item {
  * 各自的事务语义（那些各有自己的测试）。用真库会让每条用例都要造
  * 会话外键、raw 记录、幂等键 —— 而那些与闸门无关的脚手架会淹掉判据。
  */
-function makeProducer(domain: ScopedDomain) {
+function makeProducer(domain: GateDomain) {
   const persisted: Item[][] = []
   const accounted: { partitionId: string; dayBucket: string; delta: number }[] = []
   const producer: DomainProducer<Item> = {
@@ -78,7 +81,7 @@ function makeRunner(vault: TestVault) {
 /** 往 `distill_sources` 写一行范围。 */
 function setScope(
   vault: TestVault,
-  domain: ScopedDomain,
+  domain: GateDomain,
   scope: { since?: number; until?: number; conversationIds?: string[] },
   enabled = true,
 ): void {
@@ -86,7 +89,7 @@ function setScope(
 }
 
 /** 三个域共用的那一组闸门用例。 */
-const DOMAINS: readonly ScopedDomain[] = ["chat", "minutes", "doc"]
+const DOMAINS: readonly GateDomain[] = ["chat", "minutes", "doc"]
 
 describe.each(DOMAINS)("★★★ 范围闸（域 = %s）", (domain) => {
   it("★★★ 时间下界生效，**即使没配会话白名单**（这修的是飞书那个缺口）", () => {

@@ -127,7 +127,7 @@ describe("MultiGraphQueryService", () => {
       const feishuEgo: KlGraphEgo = {
         available: true,
         reason: null,
-        self: { id: "e1", name: "我", type: "PERSON", weight: 1 },
+        self: { id: "e1", name: "我" },
         nodes: [],
         edges: [],
       }

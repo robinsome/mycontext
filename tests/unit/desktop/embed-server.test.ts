@@ -76,7 +76,10 @@ describe("EmbedServerService", () => {
     })
     expect(await svc.ensureReady()).toBe(true)
     expect(spawnDuplex).toHaveBeenCalledOnce()
-    const spec = spawnDuplex.mock.calls[0]![0] as { args: string[]; env: Record<string, string> }
+    const calls = spawnDuplex.mock.calls as unknown as Array<
+      [{ args: string[]; env: Record<string, string> }]
+    >
+    const spec = calls[0]![0]
     expect(spec.args).toEqual(["-m", "kl_graph.utils.local_embed_server"])
     expect(spec.env["MYCONTEXT_EMBED_MODEL_DIR"]).toContain("Qwen3-Embedding-8B")
   })

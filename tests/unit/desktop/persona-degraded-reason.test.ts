@@ -5,9 +5,6 @@ import { describe, expect, it } from "vitest"
 import { ManualClock, createLogger } from "@mycontext/kernel"
 import { LlmClient, staticLlmProvider } from "@mycontext/llm"
 import type { ProcessRunner, RuntimeEnv } from "@mycontext/runtime-env"
-import { mkdtempSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
 import { PersonaService } from "../../../apps/desktop/src/main/services/persona.service.js"
 import { explainDegradedReason } from "../../../apps/desktop/src/renderer/features/persona/decision-reason.js"
 
@@ -31,7 +28,6 @@ function makeService(options: { llm: LlmClient | null; agentKey: boolean }) {
   return new PersonaService({
     clock: new ManualClock(NOW),
     logger,
-    workspaceRoot: mkdtempSync(join(tmpdir(), "mycontext-degraded-")),
     llmProvider: staticLlmProvider(options.llm),
     getWindow: () => null,
     runtime: {} as RuntimeEnv,

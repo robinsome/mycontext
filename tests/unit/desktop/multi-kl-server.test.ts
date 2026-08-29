@@ -93,7 +93,7 @@ describe("MultiKlServerService", () => {
     const dingtalk = server("钉钉", 2)
     const feishu = server("飞书", 3)
     const service = new MultiKlServerService(dingtalk as unknown as KlServerService, () => [
-      { service: feishu as unknown as KlServerService, enabled: () => true },
+      { channelId: "feishu", service: feishu as unknown as KlServerService, enabled: () => true },
     ])
 
     // ① 合并路径（不给 channelId）
@@ -116,7 +116,7 @@ describe("MultiKlServerService", () => {
     const dingtalk = server("钉钉", 2)
     const feishu = server("飞书", 3)
     const service = new MultiKlServerService(dingtalk as unknown as KlServerService, () => [
-      { service: feishu as unknown as KlServerService, enabled: () => true },
+      { channelId: "feishu", service: feishu as unknown as KlServerService, enabled: () => true },
     ])
 
     const out = service.graphOverview().lastBuild
@@ -129,7 +129,7 @@ describe("MultiKlServerService", () => {
     const dingtalk = server("钉钉", 2)
     const feishu = server("飞书", 3)
     const service = new MultiKlServerService(dingtalk as unknown as KlServerService, () => [
-      { service: feishu as unknown as KlServerService, enabled: () => true },
+      { channelId: "feishu", service: feishu as unknown as KlServerService, enabled: () => true },
     ])
 
     const built = await service.rebuildGraph(false)
@@ -147,7 +147,7 @@ describe("MultiKlServerService", () => {
     const dingtalk = server("钉钉", 2)
     const feishu = server("飞书", 3)
     const service = new MultiKlServerService(dingtalk as unknown as KlServerService, () => [
-      { service: feishu as unknown as KlServerService, enabled: () => false },
+      { channelId: "feishu", service: feishu as unknown as KlServerService, enabled: () => false },
     ])
 
     await service.ensureReady()

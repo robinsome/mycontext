@@ -23,6 +23,9 @@ import { useChannelConversations } from "@renderer/lib/queries"
 
 afterEach(cleanup)
 
+/** QueryOptions 泛型丢了 refetchInterval/staleTime —— 测试只读这两个字段。 */
+type PollOptions = { refetchInterval?: unknown; staleTime?: unknown }
+
 function setup(responses: { items: unknown[]; truncated: boolean; sources?: unknown[] }[]) {
   let call = 0
   const conversations = vi.fn(() => {
@@ -52,7 +55,7 @@ describe("★★ 截断的会话列表要能自己恢复", () => {
     await waitFor(() => expect(result.current.data).toBeDefined())
 
     const query = client.getQueryCache().find({ queryKey: ["channel", "conversations"] })
-    const interval = query?.options.refetchInterval
+    const interval = (query?.options as PollOptions).refetchInterval
     const resolved = typeof interval === "function" ? interval(query!) : interval
     expect(typeof resolved).toBe("number")
   })
@@ -67,7 +70,7 @@ describe("★★ 截断的会话列表要能自己恢复", () => {
     await waitFor(() => expect(result.current.data).toBeDefined())
 
     const query = client.getQueryCache().find({ queryKey: ["channel", "conversations"] })
-    const interval = query?.options.refetchInterval
+    const interval = (query?.options as PollOptions).refetchInterval
     const resolved = typeof interval === "function" ? interval(query!) : interval
     expect(resolved).toBe(false)
   })
@@ -81,7 +84,7 @@ describe("★★ 截断的会话列表要能自己恢复", () => {
     await waitFor(() => expect(result.current.data).toBeDefined())
 
     const query = client.getQueryCache().find({ queryKey: ["channel", "conversations"] })
-    const stale = query?.options.staleTime
+    const stale = (query?.options as PollOptions).staleTime
     const resolved = typeof stale === "function" ? stale(query!) : stale
     expect(typeof resolved).toBe("number")
     expect(resolved as number).toBeLessThan(60_000)
@@ -111,7 +114,7 @@ describe("★★ 截断的会话列表要能自己恢复", () => {
     await waitFor(() => expect(result.current.data).toBeDefined())
 
     const query = client.getQueryCache().find({ queryKey: ["channel", "conversations"] })
-    const interval = query?.options.refetchInterval
+    const interval = (query?.options as PollOptions).refetchInterval
     expect(typeof interval === "function" ? interval(query!) : interval).toBe(false)
   })
 
@@ -128,7 +131,7 @@ describe("★★ 截断的会话列表要能自己恢复", () => {
     await waitFor(() => expect(result.current.data).toBeDefined())
 
     const query = client.getQueryCache().find({ queryKey: ["channel", "conversations"] })
-    const interval = query?.options.refetchInterval
+    const interval = (query?.options as PollOptions).refetchInterval
     expect(typeof interval === "function" ? interval(query!) : interval).toBe(false)
   })
 
@@ -145,7 +148,7 @@ describe("★★ 截断的会话列表要能自己恢复", () => {
     await waitFor(() => expect(result.current.data).toBeDefined())
 
     const query = client.getQueryCache().find({ queryKey: ["channel", "conversations"] })
-    const interval = query?.options.refetchInterval
+    const interval = (query?.options as PollOptions).refetchInterval
     expect(typeof (typeof interval === "function" ? interval(query!) : interval)).toBe("number")
   })
 
@@ -165,7 +168,9 @@ describe("★★ 截断的会话列表要能自己恢复", () => {
     await waitFor(() => expect(result.current.data).toBeDefined())
 
     const query = client.getQueryCache().find({ queryKey: ["channel", "conversations"] })!
-    const interval = query.options.refetchInterval as (q: typeof query) => number | false
+    const interval = (query.options as PollOptions).refetchInterval as (
+      q: typeof query,
+    ) => number | false
     // 伪造"已经取到过 8 次"→ 必须停
     const exhausted = {
       ...query,

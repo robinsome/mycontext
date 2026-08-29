@@ -87,6 +87,7 @@ function ingestSnapshot(backfill: IngestSnapshot["backfill"]): IngestSnapshot {
     blockedReason: null,
     failedAttempts: 0,
     selfConfirmed: true,
+    selfIdentityState: null,
     mediaAssets: 0,
     minutes: 0,
     // 这一屏不显示听记覆盖面；给 null（= 还没跑过一轮）而不是造一份假数据
@@ -94,6 +95,15 @@ function ingestSnapshot(backfill: IngestSnapshot["backfill"]): IngestSnapshot {
     storage: { mainBytes: 0, walBytes: 0, rawRecords: 0, rawPruned: 0, vectors: 0 },
     staleConsumers: [],
     eventStream: null,
+    consumers: [],
+    producers: [],
+    domains: [],
+    scope: {
+      restricted: false,
+      allowed: null,
+      droppedOutOfScope: 0,
+      lastDroppedAt: null,
+    },
     backfill,
   }
 }

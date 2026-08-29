@@ -284,6 +284,7 @@ describe("★★ 保存范围时才通知（引导页一次点九个源，不能
       clock: new ManualClock(START),
       logger: createLogger("test-source", { level: "error" }),
       plugin: makePlugin(),
+      primaryChannelId: "dingtalk",
       onScopeChanged: () => {
         calls += 1
       },
@@ -295,7 +296,12 @@ describe("★★ 保存范围时才通知（引导页一次点九个源，不能
   it("chat 范围真的变了 → 通知一次", () => {
     const vault = openTestVault()
     const { service, calls } = makeSourceService(vault)
-    service.save({ kind: "chat", enabled: true, scope: { conversationIds: [A] } })
+    service.save({
+      channelId: "dingtalk",
+      kind: "chat",
+      enabled: true,
+      scope: { conversationIds: [A] },
+    })
     expect(calls()).toBe(1)
     vault.close()
   })
@@ -303,8 +309,18 @@ describe("★★ 保存范围时才通知（引导页一次点九个源，不能
   it("★ 同样的范围再存一次 → 不通知（否则每点下一步都重建一次图）", () => {
     const vault = openTestVault()
     const { service, calls } = makeSourceService(vault)
-    service.save({ kind: "chat", enabled: true, scope: { conversationIds: [A, B] } })
-    service.save({ kind: "chat", enabled: true, scope: { conversationIds: [A, B] } })
+    service.save({
+      channelId: "dingtalk",
+      kind: "chat",
+      enabled: true,
+      scope: { conversationIds: [A, B] },
+    })
+    service.save({
+      channelId: "dingtalk",
+      kind: "chat",
+      enabled: true,
+      scope: { conversationIds: [A, B] },
+    })
     expect(calls()).toBe(1)
     vault.close()
   })
@@ -312,8 +328,18 @@ describe("★★ 保存范围时才通知（引导页一次点九个源，不能
   it("★ 勾选顺序变了但集合相同 → 不通知（引导页每次重新构造数组）", () => {
     const vault = openTestVault()
     const { service, calls } = makeSourceService(vault)
-    service.save({ kind: "chat", enabled: true, scope: { conversationIds: [A, B] } })
-    service.save({ kind: "chat", enabled: true, scope: { conversationIds: [B, A] } })
+    service.save({
+      channelId: "dingtalk",
+      kind: "chat",
+      enabled: true,
+      scope: { conversationIds: [A, B] },
+    })
+    service.save({
+      channelId: "dingtalk",
+      kind: "chat",
+      enabled: true,
+      scope: { conversationIds: [B, A] },
+    })
     expect(calls()).toBe(1)
     vault.close()
   })
@@ -321,8 +347,8 @@ describe("★★ 保存范围时才通知（引导页一次点九个源，不能
   it("非 chat 源 → 不通知（它们的范围不参与采集闸）", () => {
     const vault = openTestVault()
     const { service, calls } = makeSourceService(vault)
-    service.save({ kind: "mail", enabled: true, scope: { since: START } })
-    service.save({ kind: "calendar", enabled: false, scope: {} })
+    service.save({ channelId: "dingtalk", kind: "mail", enabled: true, scope: { since: START } })
+    service.save({ channelId: "dingtalk", kind: "calendar", enabled: false, scope: {} })
     expect(calls()).toBe(0)
     vault.close()
   })
@@ -330,8 +356,18 @@ describe("★★ 保存范围时才通知（引导页一次点九个源，不能
   it("把 chat 源关掉也是范围变更（那意味着一条都不采）", () => {
     const vault = openTestVault()
     const { service, calls } = makeSourceService(vault)
-    service.save({ kind: "chat", enabled: true, scope: { conversationIds: [A] } })
-    service.save({ kind: "chat", enabled: false, scope: { conversationIds: [A] } })
+    service.save({
+      channelId: "dingtalk",
+      kind: "chat",
+      enabled: true,
+      scope: { conversationIds: [A] },
+    })
+    service.save({
+      channelId: "dingtalk",
+      kind: "chat",
+      enabled: false,
+      scope: { conversationIds: [A] },
+    })
     expect(calls()).toBe(2)
     vault.close()
   })

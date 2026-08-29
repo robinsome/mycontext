@@ -35,7 +35,8 @@
  */
 import { describe, expect, it } from "vitest"
 import { AppError, isAppError } from "@mycontext/kernel"
-import { resolveSelf, type AuthIdentityFallback } from "@mycontext/channels"
+import { resolveSelf } from "@mycontext/channels"
+import type { AuthIdentityFallback } from "../../../packages/channels/src/plugins/dingtalk/self-identity.js"
 
 /** 照真实响应的形状造（值全是编的）。 */
 const AUTH_IDENTITY = {
@@ -60,13 +61,16 @@ function notAuthorized(): AppError {
  * ★ 两条都拒是**真实形态**（实测两个 operation 报同一个码）。
  * 只让 `get-self` 挂的话测试会因为路 3 侥幸成功而绿 —— 那就测不到这件事。
  */
-function contactDeniedCli(): { json: (args: string[]) => Promise<unknown>; calls: string[] } {
+function contactDeniedCli(): {
+  json: <T>(_args: string[]) => Promise<T>
+  calls: string[]
+} {
   const calls: string[] = []
   return {
     calls,
-    json: (args: string[]) => {
+    json: async <T>(args: string[]): Promise<T> => {
       calls.push(args.join(" "))
-      return Promise.reject(notAuthorized())
+      return Promise.reject(notAuthorized()) as Promise<T>
     },
   }
 }

@@ -53,7 +53,13 @@ describe("重新授权的自愈路径（真 CLI）", () => {
       openExternal: async () => undefined,
     }
     const auth = new FeishuAuth(options, new LarkCli(options))
-    await auth.login({ mode: "loopback", onProgress: () => undefined }).catch(() => undefined)
+    await auth
+      .login({
+        mode: "loopback",
+        signal: new AbortController().signal,
+        onProgress: () => undefined,
+      })
+      .catch(() => undefined)
 
     const cmds = seen.map((a) => a.slice(0, 2).join(" "))
     /**

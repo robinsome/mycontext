@@ -163,6 +163,10 @@ describe("★ 「自动构建已关闭」要说出原因", () => {
       pendingMessages: 28_819,
       messagesToThreshold: 0,
       lagThreshold: 500,
+      lastBuiltAt: null,
+      maxAgeMs: 86_400_000,
+      minIntervalMs: 3_600_000,
+      syncIntervalMs: 600_000,
     })
     expect(text?.text).toMatch(/配置模型|配模型/)
   })

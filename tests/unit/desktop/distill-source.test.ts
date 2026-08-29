@@ -76,6 +76,7 @@ function makeService(plugin: ChannelPlugin) {
     clock: new ManualClock(START),
     logger,
     plugin,
+    primaryChannelId: "dingtalk",
   })
   service.attach(vault.db)
   return { service, vault }
@@ -212,6 +213,7 @@ describe("资料源列表如实标注采集器状态", () => {
       clock: new ManualClock(START),
       logger,
       plugin: {} as unknown as ChannelPlugin,
+      primaryChannelId: "dingtalk",
     })
     // 设置页在登录前也可能渲染 —— 那时抛错会让整页打不开
     const rows = service.list()
@@ -224,6 +226,7 @@ describe("保存与重置", () => {
   it("保存后能读回（含时间范围与会话白名单）", () => {
     const { service, vault } = makeService({} as unknown as ChannelPlugin)
     service.save({
+      channelId: "dingtalk",
       kind: "chat",
       enabled: true,
       scope: { since: START, chatKinds: ["group"], conversationIds: ["cid-shared"] },
@@ -237,7 +240,7 @@ describe("保存与重置", () => {
 
   it("★ reset 只清水位，不动 enabled 与 scope", () => {
     const { service, vault } = makeService({} as unknown as ChannelPlugin)
-    service.save({ kind: "chat", enabled: true, scope: { since: START } })
+    service.save({ channelId: "dingtalk", kind: "chat", enabled: true, scope: { since: START } })
     vault.db.prepare("UPDATE distill_sources SET last_synced_seq = 42 WHERE kind = 'chat'").run()
 
     service.reset("chat")

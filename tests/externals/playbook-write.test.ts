@@ -39,7 +39,8 @@ const VAULT = findRichestVaultDir()
 const KL_DB = VAULT === null ? "" : join(VAULT, "kl", "knowledge.db")
 const CORE_DB = VAULT === null ? "" : join(VAULT, "core.sqlite")
 /** 应用真实的落点（`WORK_LAYER_SKILL_PATH`）。 */
-const WORK_MD = join(VAULT, "forge", "skills", "persona-persona", "references", "work.md")
+const WORK_MD =
+  VAULT === null ? "" : join(VAULT, "forge", "skills", "persona-persona", "references", "work.md")
 
 describe("★★ 手动跑 playbook 并写进真实 work.md", () => {
   const ready = existsSync(KL_DB) && existsSync(CORE_DB)

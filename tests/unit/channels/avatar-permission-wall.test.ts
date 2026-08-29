@@ -248,7 +248,7 @@ describe("★★ 界面能说出「换一份客户端」这句可执行的话", 
       with: { type: "json" },
     })) as { default: { avatarMiss: Record<string, string> } }
 
-    expect(zh.default.avatarMiss.notPermitted).toContain("客户端")
-    expect(en.default.avatarMiss.notPermitted.toLowerCase()).toContain("client")
+    expect(zh.default.avatarMiss.notPermitted!).toContain("客户端")
+    expect(en.default.avatarMiss.notPermitted!.toLowerCase()).toContain("client")
   })
 })
