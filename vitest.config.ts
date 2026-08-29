@@ -15,6 +15,14 @@ export default defineConfig({
     environment: "node",
     include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
     reporters: ["default"],
+    /**
+     * Windows + `--coverage` 下 v8 插桩会把本机几十 ms 的用例拖到数秒
+     * （实测 graph-sync / ingest-window-queue / supervisor 一批卡在默认 5s）。
+     * 普通 `pnpm test` 仍用 5s，避免假慢掩盖死锁；只放宽覆盖率那条线。
+     */
+    testTimeout: process.argv.some((arg) => arg === "--coverage" || arg.startsWith("--coverage="))
+      ? 30_000
+      : 5_000,
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],
