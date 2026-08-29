@@ -5,12 +5,18 @@ name: Build and Release Desktop App
 # 并显式传 --config。在 apps/desktop 下 `pnpm --filter … exec` 会把
 # projectDir 当成 apps/desktop，产出叠成 apps/desktop/apps/desktop/release，
 # asar 入口 apps/desktop/out/main/index.js 也找不到（run 33280873242 实测）。
+#
+# 产物：`dir`（yml 默认） alone 不会进 Artifacts/Releases 可下文件；
+# CI 显式打 `dmg`，再 upload-artifact + `--publish always`（写 GitHub Release）。
 
 on:
   push:
     tags:
       - "v*"
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   release:
@@ -41,11 +47,21 @@ jobs:
         run: pnpm run build:app
 
       # ★ 必须在仓库根执行，并带 --config；不要用 filter exec（见文件头）。
+      # `--mac dmg` 覆盖 yml 里仅 `dir` 的 target，产出可下载的 .dmg。
       - name: Package Desktop Application
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: >
           pnpm exec electron-builder
-          --mac --arm64
+          --mac dmg --arm64
           --publish always
           --config apps/desktop/electron-builder.yml
+
+      # 与 package-windows-x64 对称：跑完就能在 Actions 页下载，不依赖 Release。
+      - name: Upload macOS arm64 packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: MyContext-macos-arm64
+          path: apps/desktop/release/**
+          if-no-files-found: error
+          retention-days: 14
