@@ -1,7 +1,8 @@
 # Web Service（Ubuntu）+ 本机仅 dws 推送
 
-**状态：** 已确认（2026-08-30）  
-**选择：** 1B 数据落 Ubuntu；Win/mac **只装官方 DingTalk Workspace CLI（`dws`）**，不做 MyContext 本机 agent 包。
+**状态：** 过渡 / 将被取代（2026-08-30）  
+**取代规格：** `docs/superpowers/specs/2026-08-30-enterprise-openapi-collector-design.md`（C1 企业应用 + OAuth，不再依赖本机个人 `dws`）  
+**历史选择：** 1B 数据落 Ubuntu；Win/mac **只装官方渠道 CLI（`dws`）** 推送 —— 仅作过渡，正式主路径见取代规格。
 
 ## 目标
 
