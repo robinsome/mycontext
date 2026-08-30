@@ -1,0 +1,231 @@
+# Ubuntu Web Service 部署指南
+
+本文说明在 **Ubuntu** 上运行 MyContext Web Service（浏览器 UI + HTTP API + 数据卷），
+并由 **Windows / macOS 本机** 安装官方渠道 CLI（`dws`）后，把渠道导出 **推送** 到服务器。
+
+## 架构（MVP）
+
+```
+[浏览器] ⇄ HTTPS ⇄ [Ubuntu: Web UI + API + SQLite/导出目录]
+                              ↑
+                    Bearer token + JSON 四件套
+                              ↑
+[Win/mac: 渠道 CLI（dws）] ── sync 脚本 ──┘
+```
+
+**硬约束（与 [设计说明](../design/web-service-ubuntu-dws-push.md) 一致）：**
+
+- 个人身份的 `dws` **必须在已登录钉钉的本机**运行；Ubuntu 容器/进程**不能**替代本机登录态。
+- 同步方向仅为 **本机 → 服务器**（push）。
+- 聊天原文落在运营者控制的 Ubuntu 磁盘；**不得**把真实聊天、真实 openId 或本机用户名路径写进 git / issue。
+
+当前 `deploy/docker-compose.yml` **仅包含 web-server**。`kl-server` 建图需**同机另起**（或后续 sidecar）；未就绪时 `POST /api/v1/graph/build` 会失败，但推送与状态查询仍可用。
+
+---
+
+## 前置条件
+
+| 项 | 说明 |
+| --- | --- |
+| 系统 | Ubuntu 22.04 LTS 或更新（其他 Linux 发行版可参考，未逐台验证） |
+| 容器 | Docker Engine 24+ 与 Compose 插件（`docker compose version`） |
+| 网络 | 公网访问建议绑定域名；API **仅经 HTTPS** 对外（见下文反代） |
+| 磁盘 | 为命名卷或 bind mount 预留足够空间；建议启用磁盘加密（LUKS 或云盘加密） |
+
+---
+
+## 快速启动（Docker Compose）
+
+在**仓库根目录**执行：
+
+```bash
+cp deploy/.env.example deploy/.env
+# 编辑 deploy/.env：设置 MYCONTEXT_SYNC_TOKEN（强随机字符串）
+
+docker compose -f deploy/docker-compose.yml up -d --build
+```
+
+验证：
+
+```bash
+curl -sS http://127.0.0.1:8787/health
+# 期望：{"ok":true}
+```
+
+浏览器打开 `http://<服务器>:8787/`（生产请改走 HTTPS 域名），可查看同步状态与 token 设置页。
+
+### 环境变量
+
+| 变量 | 必填 | 说明 |
+| --- | --- | --- |
+| `MYCONTEXT_DATA_DIR` | 是（compose 已设为 `/data`） | vault、导出、`sync-token` 根目录 |
+| `MYCONTEXT_SYNC_TOKEN` | 推荐 | 与 Win/mac 推送脚本一致的 Bearer；**留空**则首次启动在数据卷生成 token |
+| `MYCONTEXT_PORT` | 否 | 容器内监听端口，默认 `8787` |
+| `MYCONTEXT_HOST` | 否 | 默认 `0.0.0.0` |
+| `KL_SERVER_PORT` | 否 | 同机 kl-server 端口，默认 `8200`（kl 未部署时可忽略） |
+
+Compose 额外变量（写在 `deploy/.env`）：
+
+| 变量 | 说明 |
+| --- | --- |
+| `MYCONTEXT_PUBLISH_PORT` | 宿主机映射端口，默认 `8787` |
+
+---
+
+## 同步 Token
+
+1. **推荐：** 在 `deploy/.env` 设置 `MYCONTEXT_SYNC_TOKEN`，与 Win/mac 推送环境变量一致。
+2. **备选：** 留空 token，启动后打开 Web UI 设置页查看/轮换（写入数据卷 `sync-token`）。
+3. 轮换后须**同步更新**本机 `MYCONTEXT_SYNC_TOKEN`，否则推送返回 HTTP 401。
+
+Token 应视为**可吊销的短时凭据**（定期轮换；泄露后立即轮换并作废旧值）。
+
+---
+
+## 防火墙
+
+**生产：** 仅对公网开放 **443**（HTTPS 反代）；**不要**把 `8787` 直接暴露到互联网。
+
+```bash
+# 示例：UFW 仅允许 SSH + HTTPS
+sudo ufw allow OpenSSH
+sudo ufw allow 443/tcp
+sudo ufw enable
+```
+
+若仅在局域网调试、暂不用反代，可临时放行映射端口：
+
+```bash
+sudo ufw allow 8787/tcp
+```
+
+---
+
+## HTTPS 反向代理（概要）
+
+Web Service 本身不提供 TLS。在 Ubuntu 上用 Caddy 或 nginx 终结 HTTPS，反代到 `127.0.0.1:8787`。
+
+### Caddy（示例）
+
+```caddy
+your-domain.example {
+    reverse_proxy 127.0.0.1:8787
+}
+```
+
+Caddy 默认自动申请证书。Compose 将 `8787` 绑定到 `127.0.0.1` 时，可把 `ports` 改为 `"127.0.0.1:8787:8787"`，仅本机反代可达。
+
+### nginx（示例）
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name your-domain.example;
+
+    ssl_certificate     /etc/ssl/certs/your-domain.fullchain.pem;
+    ssl_certificate_key /etc/ssl/private/your-domain.key;
+
+    location / {
+        proxy_pass http://127.0.0.1:8787;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        client_max_body_size 64m;
+    }
+}
+```
+
+本机推送 URL 示例：
+
+```bash
+export MYCONTEXT_SYNC_URL="https://your-domain.example/api/v1/channel-sync"
+```
+
+---
+
+## 数据卷备份
+
+所有 vault 与导出位于 Compose 命名卷 `mycontext-data`（容器内 `/data`）。
+
+**备份（示例）：**
+
+```bash
+docker run --rm \
+  -v deploy_mycontext-data:/data:ro \
+  -v /var/backups/mycontext:/backup \
+  alpine tar czf /backup/mycontext-data-$(date +%Y%m%d).tar.gz -C / data
+```
+
+**恢复：** 在**停服**后解压到新卷或 bind mount，再启动 compose。
+
+运维建议：
+
+- 定期离线备份；备份介质访问控制与磁盘加密；
+- 限制 SSH / 反代管理面权限；
+- 日志不打印消息正文（应用侧已避免；运维侧勿开启含 body 的全量 access log）。
+
+---
+
+## 本机渠道 CLI（Windows / macOS）
+
+Win/mac **不安装 MyContext 桌面 agent**；只装官方渠道 CLI，用仓库脚本推送。
+
+**安装、登录、环境变量与排错** 见：[scripts/sync/README.md](../../scripts/sync/README.md)
+
+摘要：
+
+```bash
+# 需 Node.js LTS
+npm install -g dingtalk-workspace-cli@1.0.60
+dws auth login
+
+export MYCONTEXT_SYNC_URL="https://your-domain.example/api/v1/channel-sync"
+export MYCONTEXT_SYNC_TOKEN="<与服务端一致>"
+./scripts/sync/push-dws-export.sh --fixture   # 无登录烟测
+```
+
+---
+
+## kl-server（同机，MVP 可选）
+
+`POST /api/v1/graph/build` 会向同机 `KL_SERVER_PORT`（默认 `8200`）发起 ingest。
+MVP compose **未**打包 kl-server；需要建图时在 Ubuntu **同机**按现有 kl 文档启动服务，
+并保证 web-server 容器能访问该端口（例如 host 网络、额外 compose 服务或 `host.docker.internal`，按你的网络方案配置）。
+
+后续可将 kl 作为 sidecar 纳入 compose；当前以「web-server 先通、kl 后接」为验收顺序。
+
+---
+
+## MVP 验收清单
+
+与设计 [web-service-ubuntu-dws-push.md](../design/web-service-ubuntu-dws-push.md) 对齐，逐项勾选：
+
+- [ ] **Ubuntu：** `docker compose -f deploy/docker-compose.yml up` 后，`curl /health` 返回 `ok: true`
+- [ ] **浏览器：** 打开 `/` 可见设置/同步状态骨架页
+- [ ] **Token：** 已配置 `MYCONTEXT_SYNC_TOKEN`（或数据卷内 token 与 UI 一致）
+- [ ] **HTTPS：** 公网仅 443 可达；`MYCONTEXT_SYNC_URL` 使用 `https://` 前缀
+- [ ] **Win 或 mac：** 已装渠道 CLI（`dws`），`dws auth login` 成功（live 模式）
+- [ ] **推送：** 运行 `scripts/sync/push-dws-export.sh`（`--fixture` 或 live 四件套）得到 HTTP 200
+- [ ] **落盘：** `GET /api/v1/sync/status?vaultId=...` 返回 `hasExport: true`
+- [ ] **建图（可选 MVP+）：** 同机 kl-server 就绪后，`POST /api/v1/graph/build` 成功
+- [ ] **文档：** 本机 `MYCONTEXT_SYNC_URL` + token 已交给使用者；备份策略已记录
+
+---
+
+## 排错
+
+| 现象 | 处理 |
+| --- | --- |
+| 容器启动即退出 | 查看 `docker compose logs`；确认数据卷可写 |
+| `curl /health` 连接拒绝 | 检查 `MYCONTEXT_PUBLISH_PORT`、防火墙、compose 是否 `up` |
+| 推送 HTTP 401 | 本机 `MYCONTEXT_SYNC_TOKEN` 与服务端不一致 |
+| 推送 HTTP 404 | `MYCONTEXT_SYNC_URL` 路径应为 `.../api/v1/channel-sync` |
+| 建图失败 / kl 相关 | 确认同机 kl-server 监听 `KL_SERVER_PORT`；MVP 可仅验收到「有导出」 |
+| `dws 探活失败` | 本机执行 `dws auth login`；或先用 `--fixture` 验 API |
+
+---
+
+## 相关文档
+
+- 设计说明：[docs/design/web-service-ubuntu-dws-push.md](../design/web-service-ubuntu-dws-push.md)
+- 本机 sync 脚本：[scripts/sync/README.md](../../scripts/sync/README.md)
+- Compose 文件：[deploy/docker-compose.yml](../../deploy/docker-compose.yml)

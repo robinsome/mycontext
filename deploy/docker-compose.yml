@@ -1,0 +1,34 @@
+# MyContext Web Service — MVP（仅 API + 静态 UI + 数据卷）
+#
+# 个人身份的渠道 CLI（dws）必须在已登录钉钉的 Win/mac 本机运行，不在此 compose 内。
+# kl-server 建图服务：MVP 未纳入；同机另起时 web-server 经 KL_SERVER_PORT（默认 8200）调用。
+#
+# 用法（在仓库根目录）：
+#   cp deploy/.env.example deploy/.env   # 编辑 token
+#   docker compose -f deploy/docker-compose.yml up -d --build
+
+services:
+  web-server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    ports:
+      - "${MYCONTEXT_PUBLISH_PORT:-8787}:8787"
+    environment:
+      MYCONTEXT_DATA_DIR: /data
+      MYCONTEXT_PORT: "8787"
+      MYCONTEXT_HOST: "0.0.0.0"
+      MYCONTEXT_SYNC_TOKEN: ${MYCONTEXT_SYNC_TOKEN:-}
+      KL_SERVER_PORT: ${KL_SERVER_PORT:-8200}
+    volumes:
+      - mycontext-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  mycontext-data:
