@@ -163,6 +163,12 @@ export class WebServer {
   }
 }
 
+/** 从 env 解析 listen host；未设置或空串则交给 WebServer 默认 0.0.0.0。 */
+export function resolveListenHost(env: NodeJS.ProcessEnv): string | undefined {
+  const host = env["MYCONTEXT_HOST"]
+  return host !== undefined && host !== "" ? host : undefined
+}
+
 /** CLI 入口：MYCONTEXT_DATA_DIR 必填；token 来自 env 或 dataDir/sync-token。 */
 export async function main(): Promise<void> {
   const dataDir = process.env["MYCONTEXT_DATA_DIR"]
@@ -173,7 +179,13 @@ export async function main(): Promise<void> {
   }
   const tokenStore = createSyncTokenStore(dataDir, envToken)
   const port = Number(process.env["MYCONTEXT_PORT"] ?? "8787")
-  const server = new WebServer({ dataDir, tokenStore, port })
+  const host = resolveListenHost(process.env)
+  const server = new WebServer({
+    dataDir,
+    tokenStore,
+    port,
+    ...(host !== undefined ? { host } : {}),
+  })
   await server.start()
   if (envToken === undefined || envToken === "") {
     console.log("sync token 来自 dataDir/sync-token（可在浏览器设置页轮换）")
