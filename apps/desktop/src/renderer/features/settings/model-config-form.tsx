@@ -28,9 +28,9 @@
  * · 「配没配 key」→ `Tag`（状态圆点）。一个绿点比一句话快，且不占整行；
  * · 「地址/密钥对不对」→ 探测结果那一行（有颜色、有下一步动作）；
  * · 「有哪些模型」→ chips（选中态自解释，不需要"如 glm-5.2"这种提示）；
- * · 「KL 留空回退主配置」→ `Disclosure` 的 `hint` + placeholder **就是**
- *   会回退到的那个值（比一句「留空则…」直接）；
- * · 「KL 当前实际生效值」→ `Disclosure` 的 `summary`（收起时也可见）。
+ * · 主模型、向量、知识库**各有**接口地址 / Key / 测试连接 —— 留空才回退主配置，
+ *   绝不再暗示「去上方地址填 embedding」；
+ * · 「KL / 向量留空回退主配置」→ 各区 placeholder **就是**会回退到的那个值；
  *
  * ## 保存按钮的 dirty 态
  *
@@ -48,7 +48,7 @@
  * 再挂一层就是同一件事说三四遍 —— 标题的责任留给容器。
  */
 import { useState } from "react"
-import { Button, Disclosure, Field, Input, Tag, cn } from "@mycontext/design"
+import { Button, Field, Input, Tag, cn } from "@mycontext/design"
 import type {
   CursorRuntime,
   ModelProvider,
@@ -78,23 +78,15 @@ export interface ModelConfigFormProps {
 const SUGGESTED_MODELS = ["glm-5.2", "claude-sonnet-4-6", "qwen3.7-plus"] as const
 const SUGGESTED_EMBED = ["text-embedding-v4"] as const
 
-/**
- * Disclosure 右侧摘要用短标签：本地 GGUF 常是整段绝对路径，塞进 summary
- * 会把标题挤竖排（见 disclosure.tsx）。API 模型名通常本身就短，原样返回。
- */
-function shortModelLabel(model: string): string {
-  if (model === "") return "—"
-  const slash = Math.max(model.lastIndexOf("/"), model.lastIndexOf("\\"))
-  if (slash < 0) return model
-  const base = model.slice(slash + 1)
-  return base === "" ? model : base
-}
-
 export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
   const { t } = useDynamicTranslation("settings")
   const config = useRuntimeConfig()
   const save = useSaveRuntimeConfig()
   const probe = useProbeRuntimeConfig()
+  /** 向量区独立探测 —— 与主模型共用一个 mutation 会互相覆盖结果。 */
+  const embedProbe = useProbeRuntimeConfig()
+  /** 知识库区独立探测。 */
+  const klProbe = useProbeRuntimeConfig()
 
   // 受控草稿：null = 未编辑（显示当前值）。apiKey 单独用空串草稿（不回显）。
   const [llmBaseUrl, setLlmBaseUrl] = useState<string | null>(null)
@@ -120,6 +112,8 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
   const [cursorRuntime, setCursorRuntime] = useState<CursorRuntime | null>(null)
   /** 模型名手输模式（探测列表里没有想要的那个时） */
   const [customModel, setCustomModel] = useState(false)
+  /** 知识库模型手输模式 */
+  const [customKl, setCustomKl] = useState(false)
   /**
    * 探测是**针对哪组凭据**跑的。
    *
@@ -131,17 +125,28 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
   const [probedAgainst, setProbedAgainst] = useState<{ baseUrl: string; withKey: boolean } | null>(
     null,
   )
+  const [embedProbedAgainst, setEmbedProbedAgainst] = useState<{
+    baseUrl: string
+    withKey: boolean
+  } | null>(null)
+  const [klProbedAgainst, setKlProbedAgainst] = useState<{
+    baseUrl: string
+    withKey: boolean
+  } | null>(null)
 
   const current: RuntimeConfigView | undefined = config.data
   if (current === undefined) return null
 
   const baseUrlValue = llmBaseUrl ?? current.llmBaseUrl.value
   const modelValue = modelMain ?? current.modelMain.value
+  const embedBaseUrlValue = embedLlmBaseUrl ?? current.embedLlmBaseUrl.value
   const embedValue = embedModel ?? current.embedModel.value
   const embedDimValue = embeddingDim ?? String(current.embeddingDim.value)
   const embedSendDimensionsValue = embedSendDimensions ?? current.embedSendDimensions.value
-
-  /**
+  const klBaseUrlValue = klBaseUrl ?? current.klLlmBaseUrl.value
+  /** 向量探测 / 展示用的生效地址：本区草稿优先，空则跟主模型草稿。 */
+  const embedProbeUrl = embedBaseUrlValue.trim() !== "" ? embedBaseUrlValue : baseUrlValue
+  const klProbeUrl = klBaseUrlValue.trim() !== "" ? klBaseUrlValue : baseUrlValue  /**
    * 有没有未保存的改动。
    *
    * 没有就把保存按钮禁掉 —— 否则点一下会显示「已保存」而其实什么都没提交
@@ -217,6 +222,26 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
     })
   }
 
+  /** 向量区独立测：forEmbed 让缺省 key 走已存向量密钥（空则回退主密钥）。 */
+  const runEmbedProbe = (): void => {
+    setEmbedProbedAgainst({ baseUrl: embedProbeUrl, withKey: embedLlmApiKey !== "" })
+    embedProbe.mutate({
+      forEmbed: true,
+      ...(embedProbeUrl.trim() === "" ? {} : { baseUrl: embedProbeUrl }),
+      ...(embedLlmApiKey === "" ? {} : { apiKey: embedLlmApiKey }),
+    })
+  }
+
+  /** 知识库区独立测：forKl 走已存 KL 密钥（空则回退主密钥）。 */
+  const runKlProbe = (): void => {
+    setKlProbedAgainst({ baseUrl: klProbeUrl, withKey: klApiKey !== "" })
+    klProbe.mutate({
+      forKl: true,
+      ...(klProbeUrl.trim() === "" ? {} : { baseUrl: klProbeUrl }),
+      ...(klApiKey === "" ? {} : { apiKey: klApiKey }),
+    })
+  }
+
   /**
    * 探测结果是否**仍对应当前输入**。
    *
@@ -228,16 +253,39 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
     probedAgainst.baseUrl === baseUrlValue &&
     probedAgainst.withKey === (apiKey !== "")
 
+  const embedProbeFresh =
+    embedProbedAgainst !== null &&
+    embedProbedAgainst.baseUrl === embedProbeUrl &&
+    embedProbedAgainst.withKey === (embedLlmApiKey !== "")
+
+  const klProbeFresh =
+    klProbedAgainst !== null &&
+    klProbedAgainst.baseUrl === klProbeUrl &&
+    klProbedAgainst.withKey === (klApiKey !== "")
+
   const result: RuntimeConfigProbe | undefined = probeFresh ? probe.data : undefined
+  const embedResult: RuntimeConfigProbe | undefined = embedProbeFresh ? embedProbe.data : undefined
+  const klResult: RuntimeConfigProbe | undefined = klProbeFresh ? klProbe.data : undefined
   /** 探到的列表优先；没探过用推荐档位。 */
   const modelOptions =
     result?.ok === true && result.models.length > 0
       ? result.models
       : (SUGGESTED_MODELS as readonly string[])
-  const embedOptions =
-    result?.ok === true && result.models.length > 0
-      ? result.models.filter((id) => /embed/i.test(id))
-      : (SUGGESTED_EMBED as readonly string[])
+  const klModelOptions =
+    klResult?.ok === true && klResult.models.length > 0
+      ? klResult.models
+      : (SUGGESTED_MODELS as readonly string[])
+  /**
+   * 向量模型 chips：优先带 embed 字样的；一个都没有就把全量列表摆出来
+   * （本地 GGUF / 非标准命名）。没探过用推荐档位。
+   */
+  const embedOptions = ((): readonly string[] => {
+    if (embedResult?.ok !== true || embedResult.models.length === 0) {
+      return SUGGESTED_EMBED
+    }
+    const named = embedResult.models.filter((id) => /embed/i.test(id))
+    return named.length > 0 ? named : embedResult.models
+  })()
 
   /**
    * 某个**具体模型**支持哪些协议（读探测到的 `modelProviders`）。
@@ -246,20 +294,30 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
    * 没探过）回退到**网关级**支持集。这让"选了只支持 openai 的模型"时
    * anthropic chip 能标灰，而不是拿网关整体的支持集去糊每个模型。
    */
-  const providersForModel = (model: string): readonly ModelProvider[] => {
-    const per = result?.ok === true ? result.modelProviders[model] : undefined
+  const providersFromProbe = (
+    probeResult: RuntimeConfigProbe | undefined,
+    model: string,
+  ): readonly ModelProvider[] => {
+    const per = probeResult?.ok === true ? probeResult.modelProviders[model] : undefined
     if (per !== undefined && per.length > 0) return per
-    return result?.ok === true && result.providers.length > 0
-      ? result.providers
+    return probeResult?.ok === true && probeResult.providers.length > 0
+      ? probeResult.providers
       : (["openai", "anthropic"] as const)
   }
+
+  const providersForModel = (model: string): readonly ModelProvider[] =>
+    providersFromProbe(result, model)
 
   /**
    * 某个模型的**推荐协议**：它支持 anthropic 就选 anthropic（claude 类走原生协议
    * 信息更全），否则 openai。这就是"从列表里选一个模型 → 自动选好它的协议"。
    */
-  const preferredProviderFor = (model: string): ModelProvider =>
-    providersForModel(model).includes("anthropic") ? "anthropic" : "openai"
+  const preferredProviderFrom = (
+    probeResult: RuntimeConfigProbe | undefined,
+    model: string,
+  ): ModelProvider => (providersFromProbe(probeResult, model).includes("anthropic") ? "anthropic" : "openai")
+
+  const preferredProviderFor = (model: string): ModelProvider => preferredProviderFrom(result, model)
 
   /**
    * 知识库那一路**实际会用**的协议：
@@ -272,8 +330,8 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
   const klModelValue = klModel ?? current.klModelMain.value
   const effectiveKlProvider: ModelProvider =
     klProvider ??
-    (result?.ok === true && klModelValue.trim() !== ""
-      ? preferredProviderFor(klModelValue)
+    (klResult?.ok === true && klModelValue.trim() !== ""
+      ? preferredProviderFrom(klResult, klModelValue)
       : null) ??
     current.klEffective.provider
 
@@ -289,14 +347,19 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
    * 探测识别到的网关**支持的协议集**（网关级，用于顶部 tag）。没探过（或探测没给
    * 协议信息）时两个都摆出来 —— 让用户仍能手选，只是没有"这个网关支持哪些"的确证。
    */
-  const supportedProviders: readonly ModelProvider[] =
-    result?.ok === true && result.providers.length > 0 ? result.providers : ["openai", "anthropic"]
+  const klSupportedProviders: readonly ModelProvider[] =
+    klResult?.ok === true && klResult.providers.length > 0
+      ? klResult.providers
+      : ["openai", "anthropic"]
 
   const effectiveCursorRuntime: CursorRuntime = cursorRuntime ?? current.cursorRuntime.value
 
   return (
     <div className="flex flex-col gap-[var(--gap-section-lg)]">
       <section className="flex flex-col gap-[var(--gap-section-sm)]">
+        <span className="typography-body-base-500 text-[var(--text-base-primary)]">
+          {t("model.provider.mainSection")}
+        </span>
         <Field label={t("model.provider.baseUrl")}>
           {(attributes) => (
             <Input
@@ -417,6 +480,142 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
       </section>
 
       {/*
+        向量模型一级分区：自有接口地址 / Key / 测试连接 / 模型。
+        留空地址才回退主配置 —— 绝不再让人去改上方主模型地址。
+      */}
+      <section className="flex flex-col gap-[var(--gap-section-sm)]">
+        <div className="flex flex-col gap-1">
+          <span className="typography-body-base-500 text-[var(--text-base-primary)]">
+            {t("model.embed.title")}
+          </span>
+          <span className="typography-caption-400 text-[var(--text-base-tertiary)]">
+            {t("model.embed.hint")}
+          </span>
+        </div>
+
+        <Field label={t("model.provider.baseUrl")}>
+          {(attributes) => (
+            <Input
+              {...attributes}
+              value={embedBaseUrlValue}
+              onChange={(event) => setEmbedLlmBaseUrl(event.target.value)}
+              placeholder={
+                baseUrlValue.trim() !== ""
+                  ? baseUrlValue
+                  : t("model.embed.baseUrlPlaceholder")
+              }
+            />
+          )}
+        </Field>
+
+        <div className="flex flex-col gap-[var(--gap-component-sm)]">
+          <div className="flex items-center gap-2">
+            <span className="typography-body-small-400 text-[var(--text-base-secondary)]">
+              {t("model.provider.apiKey")}
+            </span>
+            <KeyTag field={current.embedLlmApiKey} fallbackLabel={t("model.embed.inherited")} />
+          </div>
+          <Input
+            type="password"
+            aria-label={t("model.provider.apiKey")}
+            value={embedLlmApiKey}
+            onChange={(event) => setEmbedLlmApiKey(event.target.value)}
+            placeholder={t("model.provider.apiKeyPlaceholder")}
+          />
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={embedProbe.isPending}
+            onClick={runEmbedProbe}
+          >
+            {embedProbe.isPending ? t("model.probe.testing") : t("model.probe.test")}
+          </Button>
+          <ProbeResult
+            result={embedResult}
+            failed={embedProbeFresh && embedProbe.isError}
+          />
+        </div>
+
+        <div className="flex flex-col gap-[var(--gap-component-sm)]">
+          <div className="flex items-center gap-2">
+            <span className="typography-body-small-400 text-[var(--text-base-secondary)]">
+              {t("model.provider.embedModel")}
+            </span>
+            {embedResult?.ok === true && embedResult.models.length > 0 && (
+              <Tag size="sm" status="accent">
+                {t("model.probe.fromGateway", { count: embedResult.models.length })}
+              </Tag>
+            )}
+          </div>
+          <ChipPicker
+            options={embedOptions}
+            value={embedValue}
+            onPick={(next) => {
+              setEmbedModel(next)
+              setCustomEmbed(false)
+            }}
+            otherLabel={t("model.other")}
+            custom={customEmbed || !embedOptions.includes(embedValue)}
+            onCustom={() => setCustomEmbed(true)}
+          />
+          {(customEmbed || !embedOptions.includes(embedValue)) && (
+            <Input
+              aria-label={t("model.provider.embedModel")}
+              value={embedValue}
+              onChange={(event) => setEmbedModel(event.target.value)}
+              placeholder={t("model.provider.embedPlaceholder")}
+            />
+          )}
+          {embedResult?.ok === true &&
+            embedResult.models.length > 0 &&
+            embedValue.trim() !== "" &&
+            !embedResult.models.includes(embedValue) && (
+              <span className="typography-caption-400 text-[var(--status-warning)]">
+                {t("model.probe.modelNotListed")}
+              </span>
+            )}
+        </div>
+
+        <Field label={t("model.embed.embeddingDim")}>
+          {(attributes) => (
+            <Input
+              {...attributes}
+              inputMode="numeric"
+              value={embedDimValue}
+              onChange={(event) => setEmbeddingDim(event.target.value)}
+              placeholder={String(current.embedEffective.embeddingDim)}
+            />
+          )}
+        </Field>
+
+        <div className="flex flex-col gap-[var(--gap-component-sm)]">
+          <span className="typography-body-small-400 text-[var(--text-base-secondary)]">
+            {t("model.embed.sendDimensions")}
+          </span>
+          <div className="flex flex-wrap gap-1.5">
+            <Chip
+              selected={embedSendDimensionsValue}
+              onClick={() => setEmbedSendDimensions(true)}
+            >
+              {t("model.embed.sendDimensionsOn")}
+            </Chip>
+            <Chip
+              selected={!embedSendDimensionsValue}
+              onClick={() => setEmbedSendDimensions(false)}
+            >
+              {t("model.embed.sendDimensionsOff")}
+            </Chip>
+          </div>
+          <span className="typography-caption-400 text-[var(--text-base-tertiary)]">
+            {t("model.embed.sendDimensionsHint")}
+          </span>
+        </div>
+      </section>
+
+      {/*
         Agent 运行时凭据 + 落点。
         主用订阅密钥；上方「模型网关」是 OpenAI 兼容 Fallback（搜索归纳 / 分身直连）。
         文案刻意不堆第三方产品名（商标门禁）—— 说「Agent API Key」「本地 / 云端」。
@@ -466,196 +665,124 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
       </section>
 
       {/*
-        向量模型自定义。
-        · `hint` 说「留空 = 用上面的」—— 折叠标题下一行，正是帮人决定要不要展开；
-        · `summary` 给当前**实际生效**值 —— 收起时也看得见。
+        知识库一级分区：自有接口地址 / Key / 测试连接 / 协议 / 模型。
+        留空才回退主配置；测连接走 forKl，不误测主网关。
       */}
-      <Disclosure
-        title={t("model.embed.title")}
-        hint={t("model.embed.hint")}
-        summary={`${shortModelLabel(current.embedEffective.model)} · ${current.embedEffective.embeddingDim}d${
-          current.embedEffective.sendDimensions ? " · dimensions" : ""
-        }`}
-      >
-        <div className="flex flex-col gap-[var(--gap-section-sm)]">
-          <Field label={t("model.provider.baseUrl")}>
-            {(attributes) => (
-              <Input
-                {...attributes}
-                value={embedLlmBaseUrl ?? current.embedLlmBaseUrl.value}
-                onChange={(event) => setEmbedLlmBaseUrl(event.target.value)}
-                placeholder={baseUrlValue || "https://…"}
-              />
-            )}
-          </Field>
-
-          <div className="flex flex-col gap-[var(--gap-component-sm)]">
-            <div className="flex items-center gap-2">
-              <span className="typography-body-small-400 text-[var(--text-base-secondary)]">
-                {t("model.provider.apiKey")}
-              </span>
-              <KeyTag field={current.embedLlmApiKey} fallbackLabel={t("model.embed.inherited")} />
-            </div>
-            <Input
-              type="password"
-              aria-label={t("model.provider.apiKey")}
-              value={embedLlmApiKey}
-              onChange={(event) => setEmbedLlmApiKey(event.target.value)}
-              placeholder={t("model.provider.apiKeyPlaceholder")}
-            />
-          </div>
-
-          <div className="flex flex-col gap-[var(--gap-component-sm)]">
-            <span className="typography-body-small-400 text-[var(--text-base-secondary)]">
-              {t("model.provider.embedModel")}
-            </span>
-            <ChipPicker
-              options={
-                embedOptions.length > 0 ? embedOptions : (SUGGESTED_EMBED as readonly string[])
-              }
-              value={embedValue}
-              onPick={(next) => {
-                setEmbedModel(next)
-                setCustomEmbed(false)
-              }}
-              otherLabel={t("model.other")}
-              custom={customEmbed || !embedOptions.includes(embedValue)}
-              onCustom={() => setCustomEmbed(true)}
-            />
-            {(customEmbed || !embedOptions.includes(embedValue)) && (
-              <Input
-                aria-label={t("model.provider.embedModel")}
-                value={embedValue}
-                onChange={(event) => setEmbedModel(event.target.value)}
-                placeholder="text-embedding-v4"
-              />
-            )}
-            {result?.ok === true &&
-              result.models.length > 0 &&
-              embedValue.trim() !== "" &&
-              !result.models.includes(embedValue) && (
-                <span className="typography-caption-400 text-[var(--status-warning)]">
-                  {t("model.probe.modelNotListed")}
-                </span>
-              )}
-          </div>
-
-          <Field label={t("model.embed.embeddingDim")}>
-            {(attributes) => (
-              <Input
-                {...attributes}
-                inputMode="numeric"
-                value={embedDimValue}
-                onChange={(event) => setEmbeddingDim(event.target.value)}
-                placeholder={String(current.embedEffective.embeddingDim)}
-              />
-            )}
-          </Field>
-
-          <div className="flex flex-col gap-[var(--gap-component-sm)]">
-            <span className="typography-body-small-400 text-[var(--text-base-secondary)]">
-              {t("model.embed.sendDimensions")}
-            </span>
-            <div className="flex flex-wrap gap-1.5">
-              <Chip
-                selected={embedSendDimensionsValue}
-                onClick={() => setEmbedSendDimensions(true)}
-              >
-                {t("model.embed.sendDimensionsOn")}
-              </Chip>
-              <Chip
-                selected={!embedSendDimensionsValue}
-                onClick={() => setEmbedSendDimensions(false)}
-              >
-                {t("model.embed.sendDimensionsOff")}
-              </Chip>
-            </div>
-            <span className="typography-caption-400 text-[var(--text-base-tertiary)]">
-              {t("model.embed.sendDimensionsHint")}
-            </span>
-          </div>
+      <section className="flex flex-col gap-[var(--gap-section-sm)]">
+        <div className="flex flex-col gap-1">
+          <span className="typography-body-base-500 text-[var(--text-base-primary)]">
+            {t("model.kl.title")}
+          </span>
+          <span className="typography-caption-400 text-[var(--text-base-tertiary)]">
+            {t("model.kl.hint")}
+          </span>
         </div>
-      </Disclosure>
 
-      {/*
-        KL 专用网关。
-        · `hint` 说「留空 = 用上面的」—— 折叠标题下一行，正是帮人决定要不要展开；
-        · `summary` 给当前**实际生效**值 —— 收起时也看得见，看个值不用先展开。
-      */}
-      <Disclosure
-        title={t("model.kl.title")}
-        hint={t("model.kl.hint")}
-        summary={`${current.klEffective.model || "—"} · ${t(
-          `model.provider.${current.klEffective.provider}`,
-        )}`}
-      >
-        <div className="flex flex-col gap-[var(--gap-section-sm)]">
-          <Field label={t("model.provider.baseUrl")}>
-            {(attributes) => (
-              <Input
-                {...attributes}
-                value={klBaseUrl ?? current.klLlmBaseUrl.value}
-                onChange={(event) => setKlBaseUrl(event.target.value)}
-                // placeholder 就是会回退到的那个值 —— 比一句「留空则…」更直接
-                placeholder={baseUrlValue || "https://…"}
-              />
-            )}
-          </Field>
-
-          {/*
-            ★ 协议选择器 —— 知识库那一路真能切协议（传给 kl 的 KL_LLM_PROVIDER）。
-            两个 chip 亮不亮由**所选 kl 模型**的 supported_endpoint_types 决定，点击可覆盖。
-            这就是「OpenAI 兼容网关被当 Anthropic 发 → 404」那个报错的用户侧修复。
-          */}
-          <ProviderPicker
-            label={t("model.provider.protocol")}
-            hint={t("model.kl.protocolHint")}
-            value={effectiveKlProvider}
-            supported={
-              klModelValue.trim() !== "" ? providersForModel(klModelValue) : supportedProviders
-            }
-            onPick={setKlProvider}
-            openaiLabel={t("model.provider.openai")}
-            anthropicLabel={t("model.provider.anthropic")}
-            unsupportedLabel={t("model.provider.unsupported")}
-          />
-
-          <div className="flex flex-col gap-[var(--gap-component-sm)]">
-            <div className="flex items-center gap-2">
-              <span className="typography-body-small-400 text-[var(--text-base-secondary)]">
-                {t("model.provider.apiKey")}
-              </span>
-              <KeyTag field={current.klLlmApiKey} fallbackLabel={t("model.kl.inherited")} />
-            </div>
+        <Field label={t("model.provider.baseUrl")}>
+          {(attributes) => (
             <Input
-              type="password"
-              aria-label={t("model.provider.apiKey")}
-              value={klApiKey}
-              onChange={(event) => setKlApiKey(event.target.value)}
-              placeholder={t("model.provider.apiKeyPlaceholder")}
+              {...attributes}
+              value={klBaseUrlValue}
+              onChange={(event) => setKlBaseUrl(event.target.value)}
+              placeholder={
+                baseUrlValue.trim() !== "" ? baseUrlValue : t("model.kl.baseUrlPlaceholder")
+              }
             />
-          </div>
+          )}
+        </Field>
 
-          <div className="flex flex-col gap-[var(--gap-component-sm)]">
+        <div className="flex flex-col gap-[var(--gap-component-sm)]">
+          <div className="flex items-center gap-2">
+            <span className="typography-body-small-400 text-[var(--text-base-secondary)]">
+              {t("model.provider.apiKey")}
+            </span>
+            <KeyTag field={current.klLlmApiKey} fallbackLabel={t("model.kl.inherited")} />
+          </div>
+          <Input
+            type="password"
+            aria-label={t("model.provider.apiKey")}
+            value={klApiKey}
+            onChange={(event) => setKlApiKey(event.target.value)}
+            placeholder={t("model.provider.apiKeyPlaceholder")}
+          />
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Button size="sm" variant="secondary" disabled={klProbe.isPending} onClick={runKlProbe}>
+            {klProbe.isPending ? t("model.probe.testing") : t("model.probe.test")}
+          </Button>
+          <ProbeResult result={klResult} failed={klProbeFresh && klProbe.isError} />
+        </div>
+
+        {/*
+          ★ 协议选择器 —— 知识库那一路真能切协议（传给 kl 的 KL_LLM_PROVIDER）。
+          两个 chip 亮不亮由**所选 kl 模型**的 supported_endpoint_types 决定，点击可覆盖。
+          这就是「OpenAI 兼容网关被当 Anthropic 发 → 404」那个报错的用户侧修复。
+        */}
+        <ProviderPicker
+          label={t("model.provider.protocol")}
+          hint={t("model.kl.protocolHint")}
+          value={effectiveKlProvider}
+          supported={
+            klModelValue.trim() !== ""
+              ? providersFromProbe(klResult, klModelValue)
+              : klSupportedProviders
+          }
+          onPick={setKlProvider}
+          openaiLabel={t("model.provider.openai")}
+          anthropicLabel={t("model.provider.anthropic")}
+          unsupportedLabel={t("model.provider.unsupported")}
+        />
+
+        <div className="flex flex-col gap-[var(--gap-component-sm)]">
+          <div className="flex items-center gap-2">
             <span className="typography-body-small-400 text-[var(--text-base-secondary)]">
               {t("model.provider.modelMain")}
             </span>
-            <ChipPicker
-              options={modelOptions}
-              value={klModel ?? current.klModelMain.value}
-              onPick={(next) => {
-                setKlModel(next)
-                // ★ 选了 kl 模型就把手动协议清掉 → effectiveKlProvider 自动取该模型的
-                // 推荐协议（有 anthropic 选 anthropic）。用户之后仍可再手动切。
-                setKlProvider(null)
-              }}
-              // 空值 = 跟随主配置，所以这里多一个「跟随」档
-              inheritLabel={t("model.kl.inherited")}
-              onInherit={() => setKlModel("")}
-            />
+            {klResult?.ok === true && klResult.models.length > 0 && (
+              <Tag size="sm" status="accent">
+                {t("model.probe.fromGateway", { count: klResult.models.length })}
+              </Tag>
+            )}
           </div>
+          <ChipPicker
+            options={klModelOptions}
+            value={klModelValue}
+            onPick={(next) => {
+              setKlModel(next)
+              setCustomKl(false)
+              // ★ 选了 kl 模型就把手动协议清掉 → effectiveKlProvider 自动取该模型的
+              // 推荐协议（有 anthropic 选 anthropic）。用户之后仍可再手动切。
+              setKlProvider(null)
+            }}
+            // 空值 = 跟随主配置，所以这里多一个「跟随」档
+            inheritLabel={t("model.kl.inherited")}
+            onInherit={() => {
+              setKlModel("")
+              setCustomKl(false)
+            }}
+            otherLabel={t("model.other")}
+            custom={customKl || (klModelValue !== "" && !klModelOptions.includes(klModelValue))}
+            onCustom={() => setCustomKl(true)}
+          />
+          {(customKl || (klModelValue !== "" && !klModelOptions.includes(klModelValue))) && (
+            <Input
+              aria-label={t("model.provider.modelMain")}
+              value={klModelValue}
+              onChange={(event) => setKlModel(event.target.value)}
+              placeholder={modelValue || "glm-5.2"}
+            />
+          )}
+          {klResult?.ok === true &&
+            klResult.models.length > 0 &&
+            klModelValue.trim() !== "" &&
+            !klResult.models.includes(klModelValue) && (
+              <span className="typography-caption-400 text-[var(--status-warning)]">
+                {t("model.probe.modelNotListed")}
+              </span>
+            )}
         </div>
-      </Disclosure>
+      </section>
 
       <div className="flex items-center gap-3">
         <Button size="sm" disabled={save.isPending || !dirty} onClick={submit}>

@@ -481,10 +481,24 @@ export class RuntimeConfigService {
   async probe(input: {
     baseUrl?: string | undefined
     apiKey?: string | undefined
+    forEmbed?: boolean | undefined
+    forKl?: boolean | undefined
   }): Promise<RuntimeConfigProbe> {
     const resolved = this.resolved()
-    const base = (input.baseUrl ?? "").trim() !== "" ? input.baseUrl!.trim() : resolved.llmBaseUrl
-    const key = (input.apiKey ?? "").trim() !== "" ? input.apiKey!.trim() : resolved.llmApiKey
+    const forKl = input.forKl === true
+    const forEmbed = !forKl && input.forEmbed === true
+    const fallbackBase = forKl
+      ? resolved.klBaseUrl
+      : forEmbed
+        ? resolved.embedBaseUrl
+        : resolved.llmBaseUrl
+    const fallbackKey = forKl
+      ? resolved.klApiKey
+      : forEmbed
+        ? resolved.embedApiKey
+        : resolved.llmApiKey
+    const base = (input.baseUrl ?? "").trim() !== "" ? input.baseUrl!.trim() : fallbackBase
+    const key = (input.apiKey ?? "").trim() !== "" ? input.apiKey!.trim() : fallbackKey
 
     if (base.trim() === "") {
       return this.probeFail("unreachable", null)

@@ -4165,6 +4165,16 @@ export const probeRuntimeConfigInputSchema = z.object({
   baseUrl: z.string().max(2000).optional(),
   /** 留空则用已存的 key（UI 不回显，所以"不改 key 只测连通"要能表达） */
   apiKey: z.string().max(500).optional(),
+  /**
+   * true = 缺省 baseUrl/apiKey 时用**向量生效凭据**（空则回退主配置）。
+   * 设置页向量区「测试连接」用它，避免测到主模型网关上。
+   */
+  forEmbed: z.boolean().optional(),
+  /**
+   * true = 缺省 baseUrl/apiKey 时用**知识库生效凭据**（空则回退主配置）。
+   * 与 forEmbed 互斥；同时为 true 时 forKl 优先。
+   */
+  forKl: z.boolean().optional(),
 })
 
 export type ProbeRuntimeConfigInput = z.infer<typeof probeRuntimeConfigInputSchema>

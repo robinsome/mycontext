@@ -400,6 +400,52 @@ describe("网关探测", () => {
     ctx.close()
   })
 
+  /** 向量区独立测：forEmbed 让缺省 key 走已存向量密钥（空则回退主密钥）。 */
+  it("forEmbed 省略 apiKey 时用已存的向量 key", async () => {
+    let seenAuth = ""
+    const { impl, urls } = fakeFetch((_url, init) => {
+      seenAuth = String((init?.headers as Record<string, string> | undefined)?.["Authorization"])
+      return { status: 200, body: { data: [{ id: "text-embedding-v4" }] } }
+    })
+    const ctx = makeService(loadConfig(), {}, impl)
+    ctx.service.save(
+      {
+        llmApiKey: "sk-main-aaaa",
+        llmBaseUrl: "https://main.example",
+        embedLlmApiKey: "sk-embed-bbbb",
+        embedLlmBaseUrl: "https://embed.example",
+      },
+      NOW,
+    )
+    await ctx.service.probe({ forEmbed: true })
+    expect(seenAuth).toBe("Bearer sk-embed-bbbb")
+    expect(urls[0]).toContain("embed.example")
+    ctx.close()
+  })
+
+  /** 知识库区「测试连接」：forKl 缺省时用 KL 密钥。 */
+  it("forKl 省略 apiKey 时用已存的知识库 key", async () => {
+    let seenAuth = ""
+    const { impl, urls } = fakeFetch((_url, init) => {
+      seenAuth = String((init?.headers as Record<string, string> | undefined)?.["Authorization"])
+      return { status: 200, body: { data: [{ id: "glm-5.2" }] } }
+    })
+    const ctx = makeService(loadConfig(), {}, impl)
+    ctx.service.save(
+      {
+        llmApiKey: "sk-main-aaaa",
+        llmBaseUrl: "https://main.example",
+        klLlmApiKey: "sk-kl-cccc",
+        klLlmBaseUrl: "https://kl.example",
+      },
+      NOW,
+    )
+    await ctx.service.probe({ forKl: true })
+    expect(seenAuth).toBe("Bearer sk-kl-cccc")
+    expect(urls[0]).toContain("kl.example")
+    ctx.close()
+  })
+
   it("OpenAI 形状 → provider openai", async () => {
     const { impl } = fakeFetch(() => ({
       status: 200,
