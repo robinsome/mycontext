@@ -73,14 +73,17 @@ export MYCONTEXT_SYNC_TOKEN="your-sync-token"
 .\scripts\sync\push-dws-export.ps1 -Fixture
 ```
 
-服务端需已设置 `MYCONTEXT_DATA_DIR` 与相同 token，例如：
+服务端需已设置 `MYCONTEXT_DATA_DIR` 与相同 token。开发机上可在仓库根目录用全局 `tsx` 启动（`npm install -g tsx`）：
 
 ```bash
 export MYCONTEXT_DATA_DIR=/tmp/mycontext-data
 export MYCONTEXT_SYNC_TOKEN=your-sync-token
 export MYCONTEXT_PORT=8787
-node --import tsx apps/web-server/src/index.ts
+mkdir -p "$MYCONTEXT_DATA_DIR"
+tsx apps/web-server/src/index.ts
 ```
+
+生产/Ubuntu 侧按后续 Web Service 部署文档启动；fixture 也可对已在运行的远程实例推送。
 
 成功时脚本 stderr 打印 `HTTP 200` 与 `同步成功`。
 
