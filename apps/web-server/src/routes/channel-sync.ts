@@ -5,7 +5,7 @@
  * `{dataDir}/vaults/{vaultId}/exports/dws/<source>/…`
  */
 import { mkdirSync, writeFileSync } from "node:fs"
-import { join } from "node:path"
+import { isAbsolute, join, relative, resolve, sep } from "node:path"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import {
   CHANNEL_SYNC_ERROR,
@@ -20,9 +20,19 @@ export interface ChannelSyncRouteOptions {
   dataDir: string
 }
 
-/** 与 desktop AppPaths 一致：vault 在 dataDir/vaults 下。 */
+/**
+ * 与 desktop AppPaths 一致：vault 在 dataDir/vaults 下。
+ *
+ * ★ resolve + relative 二次断言：即便 vaultId 校验被绕过，落点也不能逃出 vaults/。
+ */
 export function exportRootForVault(dataDir: string, vaultId: string): string {
-  return join(dataDir, "vaults", vaultId, "exports", "dws")
+  const vaultsRoot = resolve(dataDir, "vaults")
+  const exportRoot = resolve(vaultsRoot, vaultId, "exports", "dws")
+  const rel = relative(vaultsRoot, exportRoot)
+  if (rel === "" || rel.startsWith(`..${sep}`) || rel === ".." || isAbsolute(rel)) {
+    throw new Error("vaultId 路径逃逸")
+  }
+  return exportRoot
 }
 
 /**
@@ -103,7 +113,17 @@ export async function handleChannelSyncPost(
     return
   }
 
-  const exportRoot = materializeChannelSyncExport(options.dataDir, parsed.data)
+  let exportRoot: string
+  try {
+    exportRoot = materializeChannelSyncExport(options.dataDir, parsed.data)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : ""
+    if (message.includes("路径逃逸")) {
+      jsonResponse(response, 400, { error: CHANNEL_SYNC_ERROR.INVALID_BODY })
+      return
+    }
+    throw error
+  }
   jsonResponse(response, 200, {
     ok: true,
     exportRoot,

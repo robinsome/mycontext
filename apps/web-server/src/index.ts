@@ -26,6 +26,9 @@ export class WebServer {
   private readonly syncToken: string
 
   constructor(private readonly options: WebServerOptions) {
+    if (options.syncToken === "") {
+      throw new Error("syncToken 不能为空（空 token 会让 Bearer 校验恒通过）")
+    }
     this.syncToken = options.syncToken
   }
 

@@ -92,6 +92,14 @@ describe("GET /health", () => {
   })
 })
 
+describe("WebServer 构造", () => {
+  it("空 syncToken → 抛错（禁止无鉴权启动）", () => {
+    expect(
+      () => new WebServer({ dataDir: tempDataDir(), syncToken: "", host: "127.0.0.1" }),
+    ).toThrow(/syncToken 不能为空/)
+  })
+})
+
 describe("POST /api/v1/channel-sync 鉴权", () => {
   it("无 token → 401", async () => {
     const { base } = await startServer(tempDataDir())
@@ -117,6 +125,19 @@ describe("POST /api/v1/channel-sync 鉴权", () => {
 })
 
 describe("POST /api/v1/channel-sync 落盘", () => {
+  it("vaultId 含 .. → 400，不写 vaults 外", async () => {
+    const dataDir = tempDataDir()
+    const { base } = await startServer(dataDir)
+    const payload = minimalPayload()
+    payload.manifest.vaultId = "../../outside"
+
+    const { status, body } = await postSync(base, payload, TOKEN)
+    expect(status).toBe(400)
+    expect(body["error"]).toBe("invalid_body")
+    expect(existsSync(join(dataDir, "outside"))).toBe(false)
+    expect(existsSync(join(dataDir, "vaults", "outside"))).toBe(false)
+  })
+
   it("合法 payload → 200，四件套写到 dataDir/vaults/<id>/exports/dws/", async () => {
     const dataDir = tempDataDir()
     const { base } = await startServer(dataDir)

@@ -48,9 +48,21 @@ export const channelSyncSourceNameSchema = z.enum(["chat", "minutes"])
 
 export type ChannelSyncSourceName = z.infer<typeof channelSyncSourceNameSchema>
 
+/** 单路径段安全字符：拒绝 `.` / `..` / 分隔符，阻断 join 逃逸。 */
+export function isSafePathSegment(segment: string): boolean {
+  if (segment === "" || segment === "." || segment === "..") return false
+  if (segment.includes("/") || segment.includes("\\")) return false
+  return true
+}
+
+export const vaultIdSchema = z
+  .string()
+  .min(1)
+  .refine(isSafePathSegment, { message: "vaultId 含非法路径段（拒绝 . / .. / 分隔符）" })
+
 /** 同步包元数据：vault 与渠道身份由 manifest 携带，服务端不猜路径。 */
 export const channelSyncManifestSchema = z.object({
-  vaultId: z.string().min(1),
+  vaultId: vaultIdSchema,
   channelId: z.string().min(1),
   exportedAt: z.number().int().nonnegative(),
   sources: z.array(channelSyncSourceNameSchema).min(1),

@@ -10,4 +10,6 @@ export {
   type ChannelSyncManifest,
   type ChannelSyncRequest,
   type ChannelSyncSourceName,
+  isSafePathSegment,
+  vaultIdSchema,
 } from "./channel-sync.js"
