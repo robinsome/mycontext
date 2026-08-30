@@ -21,3 +21,17 @@ export {
   type GraphBuildRequest,
 } from "./graph-build.js"
 export { buildIngestRequestBody, postKlIngest } from "./kl-ingest-http.js"
+export {
+  SYNC_STATUS_ERROR,
+  SYNC_TOKEN_ERROR,
+  syncStatusQuerySchema,
+  syncStatusResponseSchema,
+  syncStatusSourceSchema,
+  syncTokenRotateResponseSchema,
+  type SyncStatusErrorCode,
+  type SyncStatusQuery,
+  type SyncStatusResponse,
+  type SyncStatusSource,
+  type SyncTokenErrorCode,
+  type SyncTokenRotateResponse,
+} from "./sync-status.js"

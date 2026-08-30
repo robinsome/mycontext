@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MyContext — 同步状态</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>MyContext Web Service</h1>
+        <p class="subtitle">本机 dws 推送 → 服务端导出状态</p>
+      </header>
+
+      <section class="card" aria-labelledby="settings-heading">
+        <h2 id="settings-heading">连接设置</h2>
+        <p class="hint">Bearer token 仅保存在本浏览器 sessionStorage，不会回显到服务端日志。</p>
+        <label>
+          Sync Token
+          <input id="token-input" type="password" autocomplete="off" placeholder="粘贴 MYCONTEXT_SYNC_TOKEN" />
+        </label>
+        <label>
+          Vault ID
+          <input id="vault-input" type="text" value="vault-fake-001" autocomplete="off" />
+        </label>
+        <div class="actions">
+          <button type="button" id="save-btn">保存并刷新</button>
+          <button type="button" id="refresh-btn" class="secondary">刷新状态</button>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="status-heading">
+        <h2 id="status-heading">同步状态</h2>
+        <pre id="status-output" aria-live="polite">尚未查询</pre>
+      </section>
+
+      <section class="card" aria-labelledby="token-heading">
+        <h2 id="token-heading">Token 轮换</h2>
+        <p class="hint">
+          仅当服务端未用 <code>MYCONTEXT_SYNC_TOKEN</code> 启动时可轮换。新 token 只显示一次，请立即复制到本机脚本环境变量。
+        </p>
+        <button type="button" id="rotate-btn" class="danger">生成新 Sync Token</button>
+        <div id="rotate-result" class="rotate-result hidden" aria-live="assertive"></div>
+      </section>
+    </main>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
