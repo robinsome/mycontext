@@ -99,6 +99,15 @@ button {
   font: inherit;
 }
 
+a.button {
+  display: inline-block;
+  text-decoration: none;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.85rem;
+  background: var(--accent);
+  color: #fff;
+}
+
 button.secondary {
   background: transparent;
   color: var(--text);

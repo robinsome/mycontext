@@ -1,6 +1,10 @@
-# 本机 sync 脚本（仅依赖 dws）
+# 本机 sync 脚本（**已 deprecated**）
 
-Win / mac 用户**不安装 MyContext agent**，只装官方渠道 CLI（`dws`），用本目录脚本把
+> **正式主路径**已改为 Ubuntu 上企业内部应用 + 浏览器 OAuth 采集。  
+> 规格：`docs/superpowers/specs/2026-08-30-enterprise-openapi-collector-design.md`  
+> 本目录脚本仅作过渡：Win/mac 仍可用官方 `dws` 把四件套 **推送** 到服务器。
+
+Win / mac 用户若仍走过渡路径：**不安装 MyContext agent**，只装官方渠道 CLI（`dws`），用本目录脚本把
 `exports/dws` 四件套 **推送** 到 Ubuntu 上的 Web Service。
 
 ## 安装 dws（macOS / Windows）

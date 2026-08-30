@@ -229,6 +229,9 @@ importers:
 
   apps/web-server:
     dependencies:
+      '@mycontext/channels':
+        specifier: workspace:*
+        version: link:../../packages/channels
       '@mycontext/sync-contract':
         specifier: workspace:*
         version: link:../../packages/sync-contract

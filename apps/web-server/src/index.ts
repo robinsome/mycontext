@@ -1,19 +1,18 @@
 /**
  * Ubuntu Web Service HTTP 入口。
  *
- * · GET /health —— 探活，无需鉴权；
- * · GET / —— 薄静态 UI（同步状态 / token 设置）；
- * · GET /api/v1/sync/status?vaultId= —— Bearer 校验后查导出落盘状态；
- * · POST /api/v1/sync/token/rotate —— 文件-backed token 轮换（env 锁定则 409）；
- * · POST /api/v1/channel-sync —— Bearer 校验后落盘四件套；
- * · POST /api/v1/graph/build —— Bearer 校验后对 exports/dws 触发 kl ingest。
- *
- * Token：MYCONTEXT_SYNC_TOKEN 非空则进程内锁定；否则读写 dataDir/sync-token。
+ * · GET /health
+ * · 静态 UI
+ * · sync / channel-sync / graph/build（Bearer sync token）
+ * · OAuth：/api/v1/auth/*（企业应用用户登录）
+ * · 采集：/api/v1/capabilities、/api/v1/collect/run（session cookie）
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import { timingSafeEqual } from "node:crypto"
 import {
+  AUTH_ERROR,
   CHANNEL_SYNC_ERROR,
+  COLLECT_ERROR,
   GRAPH_BUILD_ERROR,
   SYNC_STATUS_ERROR,
   SYNC_TOKEN_ERROR,
@@ -24,6 +23,14 @@ import { handleGraphBuildPost } from "./routes/graph-build.js"
 import { handleSyncStatusGet } from "./routes/sync-status.js"
 import { handleSyncTokenRotatePost } from "./routes/sync-token-rotate.js"
 import {
+  handleAuthCallbackGet,
+  handleAuthLoginGet,
+  handleAuthLogoutPost,
+  handleAuthMeGet,
+  type AuthRouteDeps,
+} from "./routes/auth.js"
+import { handleCapabilitiesGet, handleCollectRunPost, type CollectRouteDeps } from "./routes/collect.js"
+import {
   DefaultGraphBuildRunner,
   type GraphBuildRunner,
 } from "./graph-build-runner.js"
@@ -33,28 +40,49 @@ import {
   type SyncTokenStore,
 } from "./sync-token-store.js"
 import { serveStatic } from "./static-files.js"
+import {
+  defaultExchangeUserToken,
+  resolveOAuthConfig,
+  type DingTalkOAuthConfig,
+  type ExchangeUserToken,
+} from "./oauth/dingtalk-oauth.js"
+import { createFileSessionStore, type SessionStore } from "./oauth/session-store.js"
 
 export type { GraphBuildRunner } from "./graph-build-runner.js"
 export type { SyncTokenStore } from "./sync-token-store.js"
 export { createSyncTokenStore, fixedSyncTokenStore, generateSyncToken } from "./sync-token-store.js"
+export {
+  buildAuthorizeUrl,
+  vaultIdFromOpenId,
+  resolveOAuthConfig,
+  defaultExchangeUserToken,
+} from "./oauth/dingtalk-oauth.js"
+export { createFileSessionStore, parseSessionCookie } from "./oauth/session-store.js"
+export { runCapabilityCollect } from "./collector/run-collect.js"
 
 export interface WebServerOptions {
-  /** 数据根（等同 MYCONTEXT_DATA_DIR / desktop userData） */
   dataDir: string
-  /** 同步 Bearer；等同 MYCONTEXT_SYNC_TOKEN（测试 / env 锁定模式） */
   syncToken?: string
-  /** 显式 token 存储；优先于 syncToken 字符串。 */
   tokenStore?: SyncTokenStore
   port?: number
   host?: string
-  /** 建图触发；测试注入 mock，生产用 DefaultGraphBuildRunner。 */
   graphBuildRunner?: GraphBuildRunner
+  oauthConfig?: DingTalkOAuthConfig | null
+  sessions?: SessionStore
+  exchangeUserToken?: ExchangeUserToken
+  secureCookie?: boolean
+  callMapped?: CollectRouteDeps["callMapped"]
 }
 
 export class WebServer {
   private server: Server | null = null
   private readonly tokenStore: SyncTokenStore
   private readonly graphBuildRunner: GraphBuildRunner
+  private readonly oauthConfig: DingTalkOAuthConfig | null
+  private readonly sessions: SessionStore
+  private readonly exchangeUserToken: ExchangeUserToken
+  private readonly secureCookie: boolean
+  private readonly callMapped: CollectRouteDeps["callMapped"]
 
   constructor(private readonly options: WebServerOptions) {
     if (options.tokenStore !== undefined) {
@@ -65,6 +93,11 @@ export class WebServer {
       this.tokenStore = createSyncTokenStore(options.dataDir)
     }
     this.graphBuildRunner = options.graphBuildRunner ?? new DefaultGraphBuildRunner()
+    this.oauthConfig = options.oauthConfig === undefined ? null : options.oauthConfig
+    this.sessions = options.sessions ?? createFileSessionStore(options.dataDir)
+    this.exchangeUserToken = options.exchangeUserToken ?? defaultExchangeUserToken
+    this.secureCookie = options.secureCookie === true
+    this.callMapped = options.callMapped
   }
 
   get port(): number {
@@ -95,6 +128,15 @@ export class WebServer {
     return new Promise((resolve) => server.close(() => resolve()))
   }
 
+  private authDeps(): AuthRouteDeps {
+    return {
+      oauthConfig: this.oauthConfig,
+      sessions: this.sessions,
+      exchangeUserToken: this.exchangeUserToken,
+      secureCookie: this.secureCookie,
+    }
+  }
+
   private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`)
 
@@ -104,6 +146,64 @@ export class WebServer {
         return
       }
       jsonResponse(response, 200, { ok: true })
+      return
+    }
+
+    if (url.pathname === "/api/v1/auth/login") {
+      if (request.method !== "GET") {
+        jsonResponse(response, 405, { error: AUTH_ERROR.METHOD_NOT_ALLOWED })
+        return
+      }
+      handleAuthLoginGet(request, response, this.authDeps())
+      return
+    }
+
+    if (url.pathname === "/api/v1/auth/callback") {
+      if (request.method !== "GET") {
+        jsonResponse(response, 405, { error: AUTH_ERROR.METHOD_NOT_ALLOWED })
+        return
+      }
+      await handleAuthCallbackGet(request, response, this.authDeps())
+      return
+    }
+
+    if (url.pathname === "/api/v1/auth/me") {
+      if (request.method !== "GET") {
+        jsonResponse(response, 405, { error: AUTH_ERROR.METHOD_NOT_ALLOWED })
+        return
+      }
+      handleAuthMeGet(request, response, this.authDeps())
+      return
+    }
+
+    if (url.pathname === "/api/v1/auth/logout") {
+      if (request.method !== "POST") {
+        jsonResponse(response, 405, { error: AUTH_ERROR.METHOD_NOT_ALLOWED })
+        return
+      }
+      handleAuthLogoutPost(request, response, this.authDeps())
+      return
+    }
+
+    if (url.pathname === "/api/v1/capabilities") {
+      if (request.method !== "GET") {
+        jsonResponse(response, 405, { error: COLLECT_ERROR.METHOD_NOT_ALLOWED })
+        return
+      }
+      handleCapabilitiesGet(request, response)
+      return
+    }
+
+    if (url.pathname === "/api/v1/collect/run") {
+      if (request.method !== "POST") {
+        jsonResponse(response, 405, { error: COLLECT_ERROR.METHOD_NOT_ALLOWED })
+        return
+      }
+      await handleCollectRunPost(request, response, {
+        dataDir: this.options.dataDir,
+        sessions: this.sessions,
+        ...(this.callMapped !== undefined ? { callMapped: this.callMapped } : {}),
+      })
       return
     }
 
@@ -153,7 +253,6 @@ export class WebServer {
     jsonResponse(response, 404, { error: CHANNEL_SYNC_ERROR.NOT_FOUND })
   }
 
-  /** Bearer 校验；长度不等直接拒，避免 timingSafeEqual 抛错。 */
   private authorized(request: IncomingMessage): boolean {
     const header = request.headers.authorization ?? ""
     const provided = header.startsWith("Bearer ") ? header.slice(7) : ""
@@ -163,13 +262,11 @@ export class WebServer {
   }
 }
 
-/** 从 env 解析 listen host；未设置或空串则交给 WebServer 默认 0.0.0.0。 */
 export function resolveListenHost(env: NodeJS.ProcessEnv): string | undefined {
   const host = env["MYCONTEXT_HOST"]
   return host !== undefined && host !== "" ? host : undefined
 }
 
-/** CLI 入口：MYCONTEXT_DATA_DIR 必填；token 来自 env 或 dataDir/sync-token。 */
 export async function main(): Promise<void> {
   const dataDir = process.env["MYCONTEXT_DATA_DIR"]
   const envToken = process.env["MYCONTEXT_SYNC_TOKEN"]
@@ -180,13 +277,20 @@ export async function main(): Promise<void> {
   const tokenStore = createSyncTokenStore(dataDir, envToken)
   const port = Number(process.env["MYCONTEXT_PORT"] ?? "8787")
   const host = resolveListenHost(process.env)
+  const oauthConfig = resolveOAuthConfig(process.env)
   const server = new WebServer({
     dataDir,
     tokenStore,
     port,
+    oauthConfig,
     ...(host !== undefined ? { host } : {}),
   })
   await server.start()
+  if (oauthConfig === null) {
+    console.log("OAuth 未配置（需 DINGTALK_CLIENT_ID/SECRET、DINGTALK_CORP_ID、OAUTH_REDIRECT_URI）")
+  } else {
+    console.log("OAuth 已配置：GET /api/v1/auth/login")
+  }
   if (envToken === undefined || envToken === "") {
     console.log("sync token 来自 dataDir/sync-token（可在浏览器设置页轮换）")
   } else {

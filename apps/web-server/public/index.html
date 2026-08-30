@@ -3,19 +3,43 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>MyContext — 同步状态</title>
+    <title>MyContext — Web Service</title>
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
     <main>
       <header>
         <h1>MyContext Web Service</h1>
-        <p class="subtitle">本机 dws 推送 → 服务端导出状态</p>
+        <p class="subtitle">企业应用 OAuth 采集（本机 dws 推送已降为过渡）</p>
       </header>
 
+      <section class="card" aria-labelledby="oauth-heading">
+        <h2 id="oauth-heading">企业登录</h2>
+        <p class="hint">浏览器扫码登录企业内部应用；会话为 HttpOnly cookie，不把 refresh_token 交给前端。</p>
+        <div class="actions">
+          <a class="button" href="/api/v1/auth/login">扫码登录</a>
+          <button type="button" id="me-btn" class="secondary">查看当前用户</button>
+          <button type="button" id="logout-btn" class="secondary">退出</button>
+        </div>
+        <pre id="me-output" aria-live="polite">未查询</pre>
+      </section>
+
+      <section class="card" aria-labelledby="cap-heading">
+        <h2 id="cap-heading">能力对照</h2>
+        <p class="hint">来自 READ 白名单 × skills 矩阵；deferred = 待开放平台实测，不算采集成功。</p>
+        <button type="button" id="caps-btn">刷新能力表</button>
+        <pre id="caps-output" aria-live="polite">尚未加载</pre>
+      </section>
+
+      <section class="card" aria-labelledby="collect-heading">
+        <h2 id="collect-heading">采集</h2>
+        <button type="button" id="collect-btn">运行采集（需已登录）</button>
+        <pre id="collect-output" aria-live="polite">尚未运行</pre>
+      </section>
+
       <section class="card" aria-labelledby="settings-heading">
-        <h2 id="settings-heading">连接设置</h2>
-        <p class="hint">Bearer token 仅保存在本浏览器 sessionStorage，不会回显到服务端日志。</p>
+        <h2 id="settings-heading">过渡：Sync Token 推送</h2>
+        <p class="hint">本机 dws 脚本推送仍可用；正式主路径请用上方 OAuth 采集。</p>
         <label>
           Sync Token
           <input id="token-input" type="password" autocomplete="off" placeholder="粘贴 MYCONTEXT_SYNC_TOKEN" />
@@ -31,14 +55,14 @@
       </section>
 
       <section class="card" aria-labelledby="status-heading">
-        <h2 id="status-heading">同步状态</h2>
+        <h2 id="status-heading">同步状态（推送）</h2>
         <pre id="status-output" aria-live="polite">尚未查询</pre>
       </section>
 
       <section class="card" aria-labelledby="token-heading">
         <h2 id="token-heading">Token 轮换</h2>
         <p class="hint">
-          仅当服务端未用 <code>MYCONTEXT_SYNC_TOKEN</code> 启动时可轮换。新 token 只显示一次，请立即复制到本机脚本环境变量。
+          仅当服务端未用 <code>MYCONTEXT_SYNC_TOKEN</code> 启动时可轮换。新 token 只显示一次。
         </p>
         <button type="button" id="rotate-btn" class="danger">生成新 Sync Token</button>
         <div id="rotate-result" class="rotate-result hidden" aria-live="assertive"></div>

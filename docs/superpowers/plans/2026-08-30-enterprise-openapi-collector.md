@@ -47,16 +47,20 @@
 
 ### Task 1: 浏览器 OAuth + session/vault
 
-（细节见 Cursor plan；本文件 Task 0 落地后再展开勾选。）
-
----
+- [x] OAuth login/callback/me/logout
+- [x] session cookie + vaultIdFromOpenId
+- [x] 单测（mock exchange）
 
 ### Task 2: 用户 token 采集 → 四件套 → graph/build
 
----
+- [x] capabilities API + collect/run（矩阵 deferred 进度 + 最小四件套）
+- [x] 可接 graph/build；mapped HTTP 客户端待 path 实测后填入
 
 ### Task 3: UI / 文档 / deprecated sync 脚本
 
----
+- [x] UI：登录 / 能力表 / 采集
+- [x] ubuntu-web.md OAuth env；scripts/sync README deprecated
 
-### Task 4: MVP 验收与实测笔记
+### Task 4: MVP 验收与门禁
+
+- [x] web-server + matrix + sync 相关测 32/32；web-server typecheck 通过

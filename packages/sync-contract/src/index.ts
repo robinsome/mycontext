@@ -35,3 +35,16 @@ export {
   type SyncTokenErrorCode,
   type SyncTokenRotateResponse,
 } from "./sync-status.js"
+export {
+  AUTH_ERROR,
+  COLLECT_ERROR,
+  authMeResponseSchema,
+  collectRunRequestSchema,
+  collectRunResponseSchema,
+  collectCapabilityResultSchema,
+  type AuthErrorCode,
+  type AuthMeResponse,
+  type CollectErrorCode,
+  type CollectRunRequest,
+  type CollectRunResponse,
+} from "./auth-collect.js"

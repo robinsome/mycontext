@@ -1,9 +1,30 @@
 # Ubuntu Web Service 部署指南
 
-本文说明在 **Ubuntu** 上运行 MyContext Web Service（浏览器 UI + HTTP API + 数据卷），
-并由 **Windows / macOS 本机** 安装官方渠道 CLI（`dws`）后，把渠道导出 **推送** 到服务器。
+本文说明在 **Ubuntu** 上运行 MyContext Web Service（浏览器 UI + HTTP API + 数据卷）。
 
-## 架构（MVP）
+**正式主路径（2026-08-30）：** 企业内部应用 + 浏览器 OAuth + 用户 token 采集（不再依赖本机个人 `dws`）。  
+规格：[`docs/superpowers/specs/2026-08-30-enterprise-openapi-collector-design.md`](../superpowers/specs/2026-08-30-enterprise-openapi-collector-design.md)。
+
+本机 `dws` 推送（[`scripts/sync/`](../../scripts/sync/README.md)）已标 **deprecated**，仅作过渡。
+
+## 架构（正式）
+
+```
+[浏览器 OAuth] ⇄ HTTPS ⇄ [Ubuntu: Web UI + API + 每用户 vault + 采集器 + kl]
+```
+
+## OAuth 环境变量（正式路径）
+
+| 变量 | 说明 |
+| --- | --- |
+| `DINGTALK_CLIENT_ID` | 企业内部应用 Client ID |
+| `DINGTALK_CLIENT_SECRET` | Client Secret（勿提交 git） |
+| `DINGTALK_CORP_ID` | 固定单企业 corpId |
+| `OAUTH_REDIRECT_URI` | 须与开放平台回调一致，如 `https://example.com/api/v1/auth/callback` |
+
+登录入口：`GET /api/v1/auth/login`。采集：`POST /api/v1/collect/run`（需 session cookie）。能力表：`GET /api/v1/capabilities`。
+
+## 架构（过渡：本机 dws 推送）
 
 ```
 [浏览器] ⇄ HTTPS ⇄ [Ubuntu: Web UI + API + SQLite/导出目录]
@@ -13,7 +34,7 @@
 [Win/mac: 渠道 CLI（dws）] ── sync 脚本 ──┘
 ```
 
-**硬约束（与 [设计说明](../design/web-service-ubuntu-dws-push.md) 一致）：**
+**过渡约束：**
 
 - 个人身份的 `dws` **必须在已登录钉钉的本机**运行；Ubuntu 容器/进程**不能**替代本机登录态。
 - 同步方向仅为 **本机 → 服务器**（push）。
