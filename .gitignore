@@ -145,3 +145,6 @@ vendor/models/**
 
 # 误解压的 asar 工作目录
 extracted/
+
+# git worktrees (local isolation)
+.worktrees/

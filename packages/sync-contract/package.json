@@ -1,0 +1,17 @@
+{
+  "name": "@mycontext/sync-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./channel-sync": "./src/channel-sync.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -b --pretty false"
+  },
+  "dependencies": {
+    "zod": "3.24.1"
+  }
+}

@@ -224,6 +224,15 @@ importers:
         specifier: 6.4.3
         version: 6.4.3(@types/node@22.15.3)(jiti@2.7.0)(lightningcss@1.30.2)
 
+  apps/web-server:
+    dependencies:
+      '@mycontext/sync-contract':
+        specifier: workspace:*
+        version: link:../../packages/sync-contract
+      zod:
+        specifier: 3.24.1
+        version: 3.24.1
+
   packages/agent-runtime:
     dependencies:
       '@cursor/sdk':
@@ -397,6 +406,12 @@ importers:
       better-sqlite3:
         specifier: 12.11.1
         version: 12.11.1
+
+  packages/sync-contract:
+    dependencies:
+      zod:
+        specifier: 3.24.1
+        version: 3.24.1
 
 packages:
 

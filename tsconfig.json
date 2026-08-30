@@ -44,6 +44,12 @@
       "path": "packages/persona"
     },
     {
+      "path": "packages/sync-contract"
+    },
+    {
+      "path": "apps/web-server"
+    },
+    {
       "path": "apps/desktop"
     }
   ]

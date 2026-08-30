@@ -24,6 +24,7 @@
       "@mycontext/distill": ["../packages/distill/src/index.ts"],
       "@mycontext/llm": ["../packages/llm/src/index.ts"],
       "@mycontext/persona": ["../packages/persona/src/index.ts"],
+      "@mycontext/sync-contract": ["../packages/sync-contract/src/index.ts"],
       "@tanstack/react-query": ["../apps/desktop/node_modules/@tanstack/react-query"],
       "@dicebear/core": ["../packages/design/node_modules/@dicebear/core"],
       "@dicebear/notionists": ["../packages/design/node_modules/@dicebear/notionists"]

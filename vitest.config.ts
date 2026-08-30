@@ -65,6 +65,7 @@ export default defineConfig({
       "@mycontext/distill": resolve(root, "packages/distill/src/index.ts"),
       "@mycontext/llm": resolve(root, "packages/llm/src/index.ts"),
       "@mycontext/persona": resolve(root, "packages/persona/src/index.ts"),
+      "@mycontext/sync-contract": resolve(root, "packages/sync-contract/src/index.ts"),
       "@main": resolve(root, "apps/desktop/src/main"),
       "@renderer": resolve(root, "apps/desktop/src/renderer"),
       /**
