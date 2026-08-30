@@ -8,8 +8,11 @@ on:
     tags:
       - "v*"
 
+# dist:win 固定 `--dir`（交叉打包用）；CI 在 Windows 真机上再打
+# nsis/portable，与 mac 工作流显式打 dmg 同一思路。`--publish always`
+# 需要写 Releases，故 contents: write。
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   package:
@@ -51,8 +54,20 @@ jobs:
       - name: Prepare Windows Python runtime
         run: pnpm setup:python
 
-      - name: Build Windows x64 packages
+      # 先产出 win-unpacked（含 win better-sqlite3 换装）。
+      - name: Build Windows x64 unpacked
         run: pnpm dist:win
+
+      # 再用 windows 专用 yml 打可下载安装包，并写入 GitHub Release。
+      - name: Package installers (nsis + portable)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >
+          pnpm exec electron-builder
+          --win nsis portable --x64
+          --publish always
+          --config apps/desktop/electron-builder.windows.yml
+          -c.npmRebuild=false
 
       - name: Upload Windows x64 packages
         uses: actions/upload-artifact@v7
