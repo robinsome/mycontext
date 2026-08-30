@@ -1,18 +1,25 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { COLLECT_ERROR, collectRunRequestSchema } from "@mycontext/sync-contract"
-import { OPENAPI_CAPABILITY_MATRIX, dwsCommandKey, type OpenApiCapabilityRow } from "@mycontext/channels"
+import { OPENAPI_CAPABILITY_MATRIX, dwsCommandKey } from "@mycontext/channels"
 import { jsonResponse, readJsonBody } from "../http-utils.js"
 import { runCapabilityCollect } from "../collector/run-collect.js"
+import type { CallMappedFn } from "../collector/openapi-client.js"
+import { createDockerSidecarRunner, type SidecarRunner } from "../collector/sidecar-runner.js"
 import { parseSessionCookie, type SessionStore } from "../oauth/session-store.js"
 
 export interface CollectRouteDeps {
   dataDir: string
   sessions: SessionStore
-  callMapped?: (row: OpenApiCapabilityRow, accessToken: string) => Promise<{
-    command: string
-    status: "ok" | "unreadable" | "error"
-    detail?: string
-  }>
+  callMapped?: CallMappedFn
+  /** 测试注入；缺省且 env 有 MYCONTEXT_DWS_SIDECAR_IMAGE 时构造 Docker runner */
+  sidecarRunner?: SidecarRunner
+}
+
+function resolveSidecarRunner(deps: CollectRouteDeps): SidecarRunner | undefined {
+  if (deps.sidecarRunner !== undefined) return deps.sidecarRunner
+  const image = process.env["MYCONTEXT_DWS_SIDECAR_IMAGE"]
+  if (image === undefined || image === "") return undefined
+  return createDockerSidecarRunner({ image })
 }
 
 export function handleCapabilitiesGet(_request: IncomingMessage, response: ServerResponse): void {
@@ -58,12 +65,14 @@ export async function handleCollectRunPost(
   }
 
   try {
+    const sidecarRunner = resolveSidecarRunner(deps)
     const result = await runCapabilityCollect({
       dataDir: deps.dataDir,
       vaultId: session.vaultId,
       accessToken: session.accessToken,
       ...(parsed.data.commands !== undefined ? { commandKeys: parsed.data.commands } : {}),
       ...(deps.callMapped !== undefined ? { callMapped: deps.callMapped } : {}),
+      ...(sidecarRunner !== undefined ? { sidecarRunner } : {}),
     })
     jsonResponse(response, 200, {
       ok: true,
