@@ -3,11 +3,31 @@
 Win / mac 用户**不安装 MyContext agent**，只装官方渠道 CLI（`dws`），用本目录脚本把
 `exports/dws` 四件套 **推送** 到 Ubuntu 上的 Web Service。
 
-## 安装 dws
+## 安装 dws（macOS / Windows）
 
-sync 脚本与渠道 CLI **v1.0.60** 对齐。从下列发行页下载**匹配本机平台**的资产，用同页 `checksums.txt` 校验 sha256 后，将 `dws` 加入 `PATH`：
+本机**推荐用 npm** 安装渠道 Workspace CLI（可执行文件名 `dws`），版本钉 **1.0.60**。
 
-**发行页：** https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli/releases/tag/v1.0.60
+### 前置：Node.js（含 npm / npx）
+
+未安装时先装 [Node.js LTS](https://nodejs.org/)（安装后终端里应有 `node`、`npm`、`npx`）。
+
+### 推荐：npm 全局安装
+
+```bash
+npm install -g dingtalk-workspace-cli@1.0.60
+```
+
+Windows PowerShell 同样执行上述命令。然后验证：
+
+```bash
+dws --help
+```
+
+上游发行说明：https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli/releases/tag/v1.0.60
+
+### 备选：下载平台二进制
+
+不便使用 npm 时，从同一发行页下载匹配资产，用同页 `checksums.txt` 校验 sha256 后将 `dws` 加入 `PATH`：
 
 | 平台 | 资产文件名 |
 | --- | --- |
@@ -15,19 +35,8 @@ sync 脚本与渠道 CLI **v1.0.60** 对齐。从下列发行页下载**匹配�
 | macOS Intel | `dws-darwin-amd64.tar.gz` |
 | Windows x64 | `dws-windows-amd64.zip` |
 | Windows ARM64 | `dws-windows-arm64.zip` |
-
-1. 下载上表对应资产并解压。
-2. 对照发行页 `checksums.txt` 验证 sha256（mac/Linux 可用 `shasum -a 256 -c checksums.txt`；Windows 用等价工具）。
-3. 将 `dws`（Windows 为 `dws.exe`）移到已在 `PATH` 中的目录。
-4. 执行 `dws --help` 确认可用。
-
-也可通过 npm 全局安装（**钉版本**）：
-
-```bash
-npm install -g dingtalk-workspace-cli@1.0.60
-```
-
-PowerShell 中同样使用 `@1.0.60`。
+| Linux x64 | `dws-linux-amd64.tar.gz` |
+| Linux ARM64 | `dws-linux-arm64.tar.gz` |
 
 ### Windows 推送脚本
 
