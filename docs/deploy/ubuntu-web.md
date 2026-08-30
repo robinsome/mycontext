@@ -2,16 +2,27 @@
 
 本文说明在 **Ubuntu** 上运行 MyContext Web Service（浏览器 UI + HTTP API + 数据卷）。
 
-**正式主路径（2026-08-30）：** 企业内部应用 + 浏览器 OAuth + 用户 token 采集（不再依赖本机个人 `dws`）。  
-规格：[`docs/superpowers/specs/2026-08-30-enterprise-openapi-collector-design.md`](../superpowers/specs/2026-08-30-enterprise-openapi-collector-design.md)。
+**正式主路径（2026-08-30）：** 企业内部应用 + 浏览器 OAuth + 用户 token 采集；会话等 MCP 能力由 **服务端 per-vault dws sidecar** 执行（**禁止**把本机个人 `dws` 当主路径）。  
+规格：[`docs/superpowers/specs/2026-08-30-enterprise-openapi-collector-design.md`](../superpowers/specs/2026-08-30-enterprise-openapi-collector-design.md)；sidecar 补丁：[`2026-08-30-per-user-dws-sidecar-b1.md`](../superpowers/specs/2026-08-30-per-user-dws-sidecar-b1.md)。
 
-本机 `dws` 推送（[`scripts/sync/`](../../scripts/sync/README.md)）已标 **deprecated**，仅作过渡。
+本机 `dws` 推送（[`scripts/sync/`](../../scripts/sync/README.md)）已标 **deprecated**，仅作过渡/调试。
 
 ## 架构（正式）
 
 ```
-[浏览器 OAuth] ⇄ HTTPS ⇄ [Ubuntu: Web UI + API + 每用户 vault + 采集器 + kl]
+[浏览器 OAuth] ⇄ HTTPS ⇄ [Ubuntu: Web UI + API + 每用户 vault + 采集器]
+                                      │
+                                      │ docker.sock（仅 web-server）
+                                      ▼
+                            [短生命周期 dws sidecar 容器 / vault]
+                                      │
+                                      ▼
+                            vaults/<vaultId>/exports/dws → ingest / graph
 ```
+
+- **Mapped OpenAPI**（如 `contact/users/me`）仍由 web-server 直接 HTTP 调用。
+- **Sidecar 命令**（如 `chat list-all-conversations`）由 web-server 按 vault 隔离 spawn；sidecar **不**挂载 `docker.sock`。
+- **禁止**把开发者本机 `~/.dws` 或 Win/mac 个人登录态当作正式采集主路径。
 
 ## OAuth 环境变量（正式路径）
 
@@ -23,6 +34,40 @@
 | `OAUTH_REDIRECT_URI` | 须与开放平台回调一致，如 `https://example.com/api/v1/auth/callback` |
 
 登录入口：`GET /api/v1/auth/login`。采集：`POST /api/v1/collect/run`（需 session cookie）。能力表：`GET /api/v1/capabilities`。
+
+### dws sidecar 环境变量（正式采集）
+
+| 变量 | 必填 | 说明 |
+| --- | --- | --- |
+| `MYCONTEXT_DWS_SIDECAR_IMAGE` | **是**（启用 sidecar 采集时） | 预构建镜像名，如 `mycontext-dws-sidecar:0.1.0`；web-server 通过 `docker run` 按 vault 拉起 |
+| `MYCONTEXT_DWS_SIDECAR_MAX_CONCURRENT` | 否 | 同时运行的 sidecar 容器上限，默认 `2` |
+
+Compose 已在 **web-server** 挂载 `/var/run/docker.sock`（仅编排器用）。sidecar 容器只挂载该 vault 的 `dws-home` 目录，**不得**把 sock 传进 sidecar。
+
+**snap Docker 注意：** snap 版 Docker **看不到**宿主机 `/tmp` 挂载；数据卷、sidecar 临时 env 文件、B1 spike 目录须放在 **`$HOME/...`** 或 Compose 命名卷（如 `mycontext-data`）下，勿依赖 `/tmp`。部分 snap 环境还**拉不到** Docker Hub 的 `node:*` 基础镜像 —— 须在可联网机器预构建 sidecar 后 `docker save` / scp / `docker load`（见下文）。
+
+## 构建 dws sidecar 镜像
+
+在**能访问 Docker Hub** 的机器（仓库根目录）：
+
+```bash
+docker build -f deploy/Dockerfile.dws-sidecar -t mycontext-dws-sidecar:0.1.0 .
+# 或跨平台：
+docker buildx build --platform linux/amd64 -t mycontext-dws-sidecar:0.1.0 \
+  -f deploy/Dockerfile.dws-sidecar --load .
+```
+
+镜像预装 `dingtalk-workspace-cli@1.0.60` 与 `unzip`（CLI postinstall 解压 skills）。默认 `ENTRYPOINT` 为 `dws`；运行时由 web-server 传入 `bash -lc` 脚本完成 `auth login --token` 与白名单命令。
+
+离线带到 Ubuntu：
+
+```bash
+docker save mycontext-dws-sidecar:0.1.0 | gzip -c > mycontext-dws-sidecar-0.1.0.tar.gz
+# Ubuntu 上：
+docker load -i mycontext-dws-sidecar-0.1.0.tar.gz
+```
+
+在 `deploy/.env` 设置 `MYCONTEXT_DWS_SIDECAR_IMAGE=mycontext-dws-sidecar:0.1.0` 后重启 compose。
 
 ## 架构（过渡：本机 dws 推送）
 
@@ -40,7 +85,7 @@
 - 同步方向仅为 **本机 → 服务器**（push）。
 - 聊天原文落在运营者控制的 Ubuntu 磁盘；**不得**把真实聊天、真实 openId 或本机用户名路径写进 git / issue。
 
-当前 `deploy/docker-compose.yml` **仅包含 web-server**。`kl-server` 建图需**同机另起**（或后续 sidecar）；未就绪时 `POST /api/v1/graph/build` 会失败，但推送与状态查询仍可用。
+当前 `deploy/docker-compose.yml` **仅包含 web-server**（sidecar 由 web-server 动态 `docker run`，非 compose 常驻服务）。`kl-server` 建图需**同机另起**（或后续 sidecar）；未就绪时 `POST /api/v1/graph/build` 会失败，但 OAuth 登录与 OpenAPI/sidecar 采集仍可用。
 
 ---
 
@@ -61,12 +106,45 @@
 
 ```bash
 cp deploy/.env.example deploy/.env
-# 编辑 deploy/.env：设置 MYCONTEXT_SYNC_TOKEN（强随机字符串）
+# 编辑 deploy/.env：DINGTALK_*、OAUTH_REDIRECT_URI、MYCONTEXT_DWS_SIDECAR_IMAGE
 # 生产默认 MYCONTEXT_PUBLISH_BIND=127.0.0.1（仅本机反代可达，勿把 8787 裸奔到公网）
 
+# 先构建/加载 sidecar 镜像（见上文），再：
 docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
+### GitHub Packages（GHCR，推荐）
+
+镜像：`ghcr.io/robinsome/mycontext-web-server:0.1.0`（另有 `:latest`）  
+包页：https://github.com/users/robinsome/packages/container/package/mycontext-web-server  
+
+本机发布：
+
+```bash
+./deploy/publish-ghcr.sh
+```
+
+Ubuntu 拉取（包默认 **private**，需先登录）：
+
+```bash
+echo "$GITHUB_TOKEN" | docker login ghcr.io -u USERNAME --password-stdin
+# TOKEN 需含 read:packages
+cp deploy/.env.example deploy/.env   # 填 OAuth / token
+docker compose -f deploy/docker-compose.yml pull
+docker compose -f deploy/docker-compose.yml up -d
+```
+
+### 离线镜像包（本机打包 → Ubuntu `docker load`）
+
+```bash
+./deploy/pack-ubuntu-release.sh
+# 产物：dist/ubuntu-release/
+#   mycontext-web-server-<tag>-<stamp>.tar.gz
+#   mycontext-dws-sidecar-<tag>-<stamp>.tar.gz
+#   以及同目录 docker-compose.yml、.env.example、README-LOAD.txt
+```
+
+Ubuntu 上：**两个** tar.gz 都要 `docker load -i …`，再按 `README-LOAD.txt` 配 `.env`（含 `MYCONTEXT_DWS_SIDECAR_IMAGE`）并 `docker compose up -d`。
 验证（默认绑定回环，须在 Ubuntu 本机或经 SSH 隧道执行）：
 
 ```bash
@@ -86,6 +164,8 @@ curl -sS http://127.0.0.1:8787/health
 | `MYCONTEXT_PORT` | 否 | 容器内监听端口，默认 `8787` |
 | `MYCONTEXT_HOST` | 否 | 默认 `0.0.0.0` |
 | `KL_SERVER_PORT` | 否 | 同机 kl-server 端口，默认 `8200`（kl 未部署时可忽略） |
+| `MYCONTEXT_DWS_SIDECAR_IMAGE` | sidecar 采集时必填 | 如 `mycontext-dws-sidecar:0.1.0` |
+| `MYCONTEXT_DWS_SIDECAR_MAX_CONCURRENT` | 否 | sidecar 并发上限，默认 `2` |
 
 Compose 额外变量（写在 `deploy/.env`）：
 
@@ -275,7 +355,9 @@ services:
 | 推送 HTTP 401 | 本机 `MYCONTEXT_SYNC_TOKEN` 与服务端不一致 |
 | 推送 HTTP 404 | `MYCONTEXT_SYNC_URL` 路径应为 `.../api/v1/channel-sync` |
 | 建图失败 / kl 相关 | kl 是否在**宿主机** `127.0.0.1:8200`？bridge 容器内 `127.0.0.1` 连不到宿主机 kl → 改用 `network_mode: host`；MVP 可仅验收到「有导出」 |
-| `dws 探活失败` | 本机执行 `dws auth login`；或先用 `--fixture` 验 API |
+| 采集报 sidecar 未配置 | `deploy/.env` 是否设置 `MYCONTEXT_DWS_SIDECAR_IMAGE` 且镜像已 `docker load` |
+| sidecar spawn 失败 | web-server 是否挂载 `docker.sock`；snap Docker 时数据目录是否在 `$HOME` 而非 `/tmp` |
+| `dws 探活失败`（过渡推送） | 本机执行 `dws auth login`；或先用 `--fixture` 验 API |
 
 ---
 

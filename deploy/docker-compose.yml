@@ -1,10 +1,11 @@
-# MyContext Web Service — MVP（仅 API + 静态 UI + 数据卷）
+# MyContext Web Service（API + 静态 UI + 数据卷 + 可选 dws sidecar 编排）
 #
-# 个人身份的渠道 CLI（dws）必须在已登录钉钉的 Win/mac 本机运行，不在此 compose 内。
-# kl-server 建图服务：MVP 未纳入；同机另起时 web-server 经 KL_SERVER_PORT（默认 8200）调用。
+# 正式采集：浏览器 OAuth + 服务端 per-vault dws sidecar（MYCONTEXT_DWS_SIDECAR_IMAGE）。
+# web-server 挂 docker.sock 仅用于 spawn 短生命周期 sidecar；sidecar 本身不挂 sock。
+# kl-server 建图服务：未纳入；同机另起时经 KL_SERVER_PORT（默认 8200）调用。
 #
 # 用法（在仓库根目录）：
-#   cp deploy/.env.example deploy/.env   # 编辑 token
+#   cp deploy/.env.example deploy/.env   # 编辑 token / OAuth
 #   docker compose -f deploy/docker-compose.yml up -d --build
 #
 # 生产默认仅绑定宿主机回环（127.0.0.1:8787），经 Caddy/nginx 反代对外；
@@ -12,9 +13,11 @@
 
 services:
   web-server:
+    image: ${MYCONTEXT_IMAGE:-ghcr.io/robinsome/mycontext-web-server}:${MYCONTEXT_IMAGE_TAG:-0.1.0}
     build:
       context: ..
       dockerfile: deploy/Dockerfile
+    pull_policy: ${MYCONTEXT_PULL_POLICY:-missing}
     ports:
       - "${MYCONTEXT_PUBLISH_BIND:-127.0.0.1}:${MYCONTEXT_PUBLISH_PORT:-8787}:8787"
     environment:
@@ -23,8 +26,15 @@ services:
       MYCONTEXT_HOST: "0.0.0.0"
       MYCONTEXT_SYNC_TOKEN: ${MYCONTEXT_SYNC_TOKEN:-}
       KL_SERVER_PORT: ${KL_SERVER_PORT:-8200}
+      DINGTALK_CLIENT_ID: ${DINGTALK_CLIENT_ID:-}
+      DINGTALK_CLIENT_SECRET: ${DINGTALK_CLIENT_SECRET:-}
+      DINGTALK_CORP_ID: ${DINGTALK_CORP_ID:-}
+      OAUTH_REDIRECT_URI: ${OAUTH_REDIRECT_URI:-}
+      MYCONTEXT_DWS_SIDECAR_IMAGE: ${MYCONTEXT_DWS_SIDECAR_IMAGE:-}
+      MYCONTEXT_DWS_SIDECAR_MAX_CONCURRENT: ${MYCONTEXT_DWS_SIDECAR_MAX_CONCURRENT:-2}
     volumes:
       - mycontext-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]

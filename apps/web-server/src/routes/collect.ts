@@ -19,7 +19,15 @@ function resolveSidecarRunner(deps: CollectRouteDeps): SidecarRunner | undefined
   if (deps.sidecarRunner !== undefined) return deps.sidecarRunner
   const image = process.env["MYCONTEXT_DWS_SIDECAR_IMAGE"]
   if (image === undefined || image === "") return undefined
-  return createDockerSidecarRunner({ image })
+  const maxRaw = process.env["MYCONTEXT_DWS_SIDECAR_MAX_CONCURRENT"]
+  const maxConcurrent =
+    maxRaw !== undefined && maxRaw !== "" ? Number.parseInt(maxRaw, 10) : undefined
+  return createDockerSidecarRunner({
+    image,
+    ...(maxConcurrent !== undefined && Number.isFinite(maxConcurrent)
+      ? { maxConcurrent }
+      : {}),
+  })
 }
 
 export function handleCapabilitiesGet(_request: IncomingMessage, response: ServerResponse): void {

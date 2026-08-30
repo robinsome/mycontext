@@ -1,0 +1,8 @@
+FROM node:22-bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates unzip \
+  && rm -rf /var/lib/apt/lists/* \
+  && npm install -g dingtalk-workspace-cli@1.0.60
+ENV DWS_CONFIG_DIR=/dws-home
+WORKDIR /work
+# 默认入口不 login；由编排器传入 bash -lc 脚本
+ENTRYPOINT ["dws"]
