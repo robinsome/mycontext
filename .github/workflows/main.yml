@@ -79,6 +79,8 @@ jobs:
         if: runner.os == 'macOS'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 与已发布 Release 兼容；默认 draft 会撞 existingType=release 而跳过上传
+          EP_DRAFT: "false"
         run: >
           pnpm exec electron-builder
           --mac dmg --arm64
@@ -91,6 +93,7 @@ jobs:
         if: runner.os == 'Windows'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EP_DRAFT: "false"
         run: >
           pnpm exec electron-builder
           --win nsis portable --x64

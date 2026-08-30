@@ -196,7 +196,9 @@ function resolveDwsNpmLauncher(): string | null {
 function dwsPathLooksRunnable(binPath: string): boolean {
   const normalized = binPath.replace(/\\/g, "/")
   if (normalized.endsWith("/dws.js")) {
-    return isFile(join(dirname(binPath), "..", "vendor", process.platform === "win32" ? "dws.exe" : "dws"))
+    return isFile(
+      join(dirname(binPath), "..", "vendor", process.platform === "win32" ? "dws.exe" : "dws"),
+    )
   }
   // pnpm/npm 把启动器挂在 …/.bin/dws；缺 vendor 时「文件在」但一跑就失败
   if (!normalized.includes("/.bin/")) return true

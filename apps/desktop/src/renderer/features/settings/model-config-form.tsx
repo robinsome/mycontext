@@ -399,9 +399,7 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
               value={embedBaseUrlValue}
               onChange={(event) => setEmbedLlmBaseUrl(event.target.value)}
               placeholder={
-                baseUrlValue.trim() !== ""
-                  ? baseUrlValue
-                  : t("model.embed.baseUrlPlaceholder")
+                baseUrlValue.trim() !== "" ? baseUrlValue : t("model.embed.baseUrlPlaceholder")
               }
             />
           )}
@@ -432,10 +430,7 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
           >
             {embedProbe.isPending ? t("model.probe.testing") : t("model.probe.test")}
           </Button>
-          <ProbeResult
-            result={embedResult}
-            failed={embedProbeFresh && embedProbe.isError}
-          />
+          <ProbeResult result={embedResult} failed={embedProbeFresh && embedProbe.isError} />
         </div>
 
         <div className="flex flex-col gap-[var(--gap-component-sm)]">
@@ -495,10 +490,7 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
             {t("model.embed.sendDimensions")}
           </span>
           <div className="flex flex-wrap gap-1.5">
-            <Chip
-              selected={embedSendDimensionsValue}
-              onClick={() => setEmbedSendDimensions(true)}
-            >
+            <Chip selected={embedSendDimensionsValue} onClick={() => setEmbedSendDimensions(true)}>
               {t("model.embed.sendDimensionsOn")}
             </Chip>
             <Chip

@@ -53,6 +53,12 @@ directories:
   output: apps/desktop/release
   buildResources: apps/desktop/build
 
+# 发版：与 workflow 里 EP_DRAFT=false 一致，写到正式 Release（非 draft）。
+# 若先用 gh 建了正式 Release，electron-builder 默认 draft 会跳过上传。
+publish:
+  provider: github
+  releaseType: release
+
 # 应用图标。
 #
 # 不给的话 electron-builder 打出来是 **Electron 官方那个原子图标**

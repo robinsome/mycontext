@@ -64,6 +64,7 @@ jobs:
       - name: Package installers (nsis + portable)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EP_DRAFT: "false"
         run: >
           pnpm exec electron-builder
           --win nsis portable --x64

@@ -19,6 +19,10 @@ directories:
   output: apps/desktop/release
   buildResources: apps/desktop/build
 
+publish:
+  provider: github
+  releaseType: release
+
 files:
   - apps/desktop/out/**
   - package.json
