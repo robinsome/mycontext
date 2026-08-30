@@ -78,6 +78,18 @@ export interface ModelConfigFormProps {
 const SUGGESTED_MODELS = ["glm-5.2", "claude-sonnet-4-6", "qwen3.7-plus"] as const
 const SUGGESTED_EMBED = ["text-embedding-v4"] as const
 
+/**
+ * Disclosure 右侧摘要用短标签：本地 GGUF 常是整段绝对路径，塞进 summary
+ * 会把标题挤竖排（见 disclosure.tsx）。API 模型名通常本身就短，原样返回。
+ */
+function shortModelLabel(model: string): string {
+  if (model === "") return "—"
+  const slash = Math.max(model.lastIndexOf("/"), model.lastIndexOf("\\"))
+  if (slash < 0) return model
+  const base = model.slice(slash + 1)
+  return base === "" ? model : base
+}
+
 export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
   const { t } = useDynamicTranslation("settings")
   const config = useRuntimeConfig()
@@ -461,7 +473,7 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
       <Disclosure
         title={t("model.embed.title")}
         hint={t("model.embed.hint")}
-        summary={`${current.embedEffective.model || "—"} · ${current.embedEffective.embeddingDim}d${
+        summary={`${shortModelLabel(current.embedEffective.model)} · ${current.embedEffective.embeddingDim}d${
           current.embedEffective.sendDimensions ? " · dimensions" : ""
         }`}
       >

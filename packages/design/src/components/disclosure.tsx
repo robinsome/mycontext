@@ -78,6 +78,12 @@ export function Disclosure({
             strokeLinejoin="round"
           />
         </svg>
+        {/*
+          标题列必须能拿到正常宽度。以前 summary 写 `shrink-0`，一旦右侧塞进
+          无空格长串（本地 GGUF 绝对路径之类），整行被挤到只剩 ~1 字宽，
+          标题/说明就逐字竖排 —— 设置页「向量模型自定义」就是这个样子。
+          summary 改成可收缩 + truncate；完整内容靠 title 悬停看。
+        */}
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="typography-body-base-500 text-[var(--text-base-primary)]">{title}</span>
           {hint === undefined ? null : (
@@ -85,7 +91,10 @@ export function Disclosure({
           )}
         </span>
         {summary === undefined ? null : (
-          <span className="typography-caption-400 shrink-0 text-[var(--text-base-tertiary)]">
+          <span
+            className="typography-caption-400 min-w-0 max-w-[45%] shrink truncate text-[var(--text-base-tertiary)]"
+            title={typeof summary === "string" ? summary : undefined}
+          >
             {summary}
           </span>
         )}
