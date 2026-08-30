@@ -59,6 +59,8 @@ jobs:
         run: pnpm dist:win
 
       # 再用 windows 专用 yml 打可下载安装包，并写入 GitHub Release。
+      # 不用 -c.npmRebuild=false：PowerShell 会把它拆成 -c + .npmRebuild=false
+      #（run 33285071332 实测 ENOENT）；npmRebuild 写在 windows.yml 里。
       - name: Package installers (nsis + portable)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -67,7 +69,6 @@ jobs:
           --win nsis portable --x64
           --publish always
           --config apps/desktop/electron-builder.windows.yml
-          -c.npmRebuild=false
 
       - name: Upload Windows x64 packages
         uses: actions/upload-artifact@v7
