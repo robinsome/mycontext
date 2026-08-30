@@ -15,7 +15,13 @@ const MIME: Record<string, string> = {
   ".svg": "image/svg+xml",
   ".png": "image/png",
   ".ico": "image/x-icon",
+  ".txt": "text/plain; charset=utf-8",
+  ".md": "text/plain; charset=utf-8",
+  ".sh": "text/x-shellscript; charset=utf-8",
+  ".ps1": "text/plain; charset=utf-8",
+  ".template": "text/plain; charset=utf-8",
 }
+
 
 function resolvePublicPath(urlPath: string): string | null {
   const decoded = decodeURIComponent(urlPath)

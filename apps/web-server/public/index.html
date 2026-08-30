@@ -10,7 +10,7 @@
     <main>
       <header>
         <h1>MyContext Web Service</h1>
-        <p class="subtitle">企业应用 OAuth 采集（本机 dws 推送已降为过渡）</p>
+        <p class="subtitle">浏览器 OAuth + 服务端采集为主路径（本机 dws 脚本仅调试/应急）</p>
       </header>
 
       <section class="card" aria-labelledby="oauth-heading">
@@ -32,21 +32,52 @@
       </section>
 
       <section class="card" aria-labelledby="collect-heading">
-        <h2 id="collect-heading">采集</h2>
+        <h2 id="collect-heading">采集（服务器）</h2>
+        <p class="hint">
+          主路径：扫码登录后点「运行采集」，由服务端 OpenAPI + per-vault dws sidecar 执行（<strong>本机不必装 dws</strong>）。
+          会话列表尚无用户 token HTTP 等价路径时，sidecar 会采；仍缺数据再用下方调试脚本。
+        </p>
         <button type="button" id="collect-btn">运行采集（需已登录）</button>
         <pre id="collect-output" aria-live="polite">尚未运行</pre>
       </section>
 
+      <section class="card" aria-labelledby="client-collect-heading">
+        <h2 id="client-collect-heading">客户端采集（调试/应急 · 会话/消息）</h2>
+        <p class="hint">
+          <strong>非主路径</strong>：仅当上方「运行采集」无法满足（调试、断 sidecar、应急补数）时使用。
+          本机需 <strong>Node.js</strong> + 全局 <code>dws@1.0.60</code>（<code>dws auth login</code>）+
+          下方脚本；服务器<strong>不</strong>替你跑 dws。请先扫码登录再下载（脚本写入 Sync URL / Token / Vault ID）。
+        </p>
+        <ol class="steps">
+          <li>安装 Node LTS → <code>npm install -g dingtalk-workspace-cli@1.0.60</code></li>
+          <li>本机执行 <code>dws auth login</code></li>
+          <li>下载说明与脚本 → 在终端运行</li>
+          <li>回到本页「同步状态」确认已推送</li>
+        </ol>
+        <label>
+          消息回看小时（写入下载脚本；0 = 只要会话）
+          <input id="client-hours" type="number" min="0" max="720" value="24" />
+        </label>
+        <div class="actions">
+          <a class="button secondary" href="/client/README.txt" download="mycontext-client-README.txt">下载说明 README.txt</a>
+          <button type="button" id="dl-sh-btn">下载 macOS/Linux 脚本 (.sh)</button>
+          <button type="button" id="dl-ps1-btn" class="secondary">下载 Windows 脚本 (.ps1)</button>
+        </div>
+        <pre id="client-collect-hint" aria-live="polite">登录后即可下载已填好凭证的脚本。</pre>
+      </section>
+
       <section class="card" aria-labelledby="settings-heading">
         <h2 id="settings-heading">过渡：Sync Token 推送</h2>
-        <p class="hint">本机 dws 脚本推送仍可用；正式主路径请用上方 OAuth 采集。</p>
+        <p class="hint" id="sync-token-hint">
+          钉钉扫码登录后，浏览器会自动向服务器领取 Sync Token（无需手填）。仅当部署用环境变量锁定 token 时需在服务器配置中读取。
+        </p>
         <label>
-          Sync Token
-          <input id="token-input" type="password" autocomplete="off" placeholder="粘贴 MYCONTEXT_SYNC_TOKEN" />
+          Sync Token（可选覆盖）
+          <input id="token-input" type="password" autocomplete="off" placeholder="登录后自动填充；也可手动粘贴覆盖" />
         </label>
         <label>
           Vault ID
-          <input id="vault-input" type="text" value="vault-fake-001" autocomplete="off" />
+          <input id="vault-input" type="text" value="" autocomplete="off" placeholder="登录后自动填入" />
         </label>
         <div class="actions">
           <button type="button" id="save-btn">保存并刷新</button>
@@ -62,7 +93,7 @@
       <section class="card" aria-labelledby="token-heading">
         <h2 id="token-heading">Token 轮换</h2>
         <p class="hint">
-          仅当服务端未用 <code>MYCONTEXT_SYNC_TOKEN</code> 启动时可轮换。新 token 只显示一次。
+          需已扫码登录（或持有旧 Bearer）。仅当服务端未用 <code>MYCONTEXT_SYNC_TOKEN</code> 启动时可轮换。新 token 会写回本页 sessionStorage。
         </p>
         <button type="button" id="rotate-btn" class="danger">生成新 Sync Token</button>
         <div id="rotate-result" class="rotate-result hidden" aria-live="assertive"></div>

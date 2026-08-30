@@ -22,6 +22,8 @@ import { handleChannelSyncPost } from "./routes/channel-sync.js"
 import { handleGraphBuildPost } from "./routes/graph-build.js"
 import { handleSyncStatusGet } from "./routes/sync-status.js"
 import { handleSyncTokenRotatePost } from "./routes/sync-token-rotate.js"
+import { handleSyncTokenGet } from "./routes/sync-token-get.js"
+import { hasSyncTokenAdminAccess } from "./routes/sync-token-access.js"
 import {
   handleAuthCallbackGet,
   handleAuthLoginGet,
@@ -59,6 +61,7 @@ export {
 } from "./oauth/dingtalk-oauth.js"
 export { createFileSessionStore, parseSessionCookie } from "./oauth/session-store.js"
 export { runCapabilityCollect } from "./collector/run-collect.js"
+export { defaultCallMapped } from "./collector/openapi-client.js"
 
 export interface WebServerOptions {
   dataDir: string
@@ -216,8 +219,17 @@ export class WebServer {
       return
     }
 
+    if (url.pathname === "/api/v1/sync/token") {
+      if (!hasSyncTokenAdminAccess(request, this.tokenStore, this.sessions)) {
+        jsonResponse(response, 401, { error: SYNC_TOKEN_ERROR.UNAUTHORIZED })
+        return
+      }
+      handleSyncTokenGet(request, response, this.tokenStore)
+      return
+    }
+
     if (url.pathname === "/api/v1/sync/token/rotate") {
-      if (!this.authorized(request)) {
+      if (!hasSyncTokenAdminAccess(request, this.tokenStore, this.sessions)) {
         jsonResponse(response, 401, { error: SYNC_TOKEN_ERROR.UNAUTHORIZED })
         return
       }

@@ -8,6 +8,7 @@ import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import { WebServer, createSyncTokenStore } from "../../../apps/web-server/src/index.js"
 import { materializeChannelSyncExport } from "../../../apps/web-server/src/routes/channel-sync.js"
+import { clearPendingOAuthStates } from "../../../apps/web-server/src/routes/auth.js"
 import type { ChannelSyncRequest } from "@mycontext/sync-contract"
 
 const TOKEN = "sync-token-ui-smoke-test012345"
@@ -16,6 +17,7 @@ const servers: WebServer[] = []
 const dirs: string[] = []
 
 afterEach(async () => {
+  clearPendingOAuthStates()
   while (servers.length > 0) await servers.pop()?.stop()
   while (dirs.length > 0) {
     const dir = dirs.pop()
@@ -42,6 +44,45 @@ async function startFileBackedServer(dataDir: string) {
   servers.push(server)
   const port = await server.start()
   return { server, base: `http://127.0.0.1:${port}`, tokenStore }
+}
+
+/** file-backed sync token + 伪造 OAuth session（与 oauth-collect 同形）。 */
+async function startOAuthFileBacked(dataDir: string) {
+  const tokenStore = createSyncTokenStore(dataDir)
+  const oauthConfig = {
+    clientId: "ding-fake-client",
+    clientSecret: "fake-secret",
+    corpId: "dingFAKECORP0001",
+    redirectUri: "http://127.0.0.1/api/v1/auth/callback",
+  }
+  const server = new WebServer({
+    dataDir,
+    tokenStore,
+    host: "127.0.0.1",
+    oauthConfig,
+    exchangeUserToken: async () => ({
+      accessToken: "user-access-fake",
+      refreshToken: "user-refresh-fake",
+      openId: "openFAKE0001",
+      expireIn: 7200,
+    }),
+  })
+  servers.push(server)
+  const port = await server.start()
+  const base = `http://127.0.0.1:${port}`
+
+  const login = await fetch(`${base}/api/v1/auth/login`, { redirect: "manual" })
+  const location = login.headers.get("location") ?? ""
+  const state = new URL(location).searchParams.get("state")
+  expect(state).toBeTruthy()
+  const cb = await fetch(
+    `${base}/api/v1/auth/callback?authCode=fake-code&state=${encodeURIComponent(state!)}`,
+    { redirect: "manual" },
+  )
+  const setCookie = cb.headers.get("set-cookie")
+  expect(setCookie).toContain("mc_session=")
+  const sessionCookie = setCookie!.split(";")[0]!
+  return { server, base, tokenStore, sessionCookie }
 }
 
 function minimalPayload(): ChannelSyncRequest {
@@ -106,6 +147,35 @@ describe("GET / 静态 UI", () => {
     const html = await response.text()
     expect(html).toContain("MyContext Web Service")
     expect(html).toContain("同步状态")
+    expect(html).toContain("运行采集")
+    expect(html).toContain("本机不必装 dws")
+    expect(html).toContain("调试/应急")
+    expect(html).toContain("客户端采集")
+    expect(html).toContain("/client/README.txt")
+    const serverCollectIdx = html.indexOf("采集（服务器）")
+    const clientCollectIdx = html.indexOf("客户端采集")
+    expect(serverCollectIdx).toBeGreaterThan(-1)
+    expect(clientCollectIdx).toBeGreaterThan(serverCollectIdx)
+  })
+
+  it("GET /client/README.txt 与脚本模板可下载", async () => {
+    const { base } = await startServer(tempDataDir())
+    const readme = await fetch(`${base}/client/README.txt`)
+    expect(readme.status).toBe(200)
+    const readmeText = await readme.text()
+    expect(readmeText).toContain("路径 A")
+    expect(readmeText).toContain("dws auth login")
+
+    const sh = await fetch(`${base}/client/collect-from-dws.sh.template`)
+    expect(sh.status).toBe(200)
+    const shText = await sh.text()
+    expect(shText).toContain("__SYNC_URL__")
+    expect(shText).toContain("__SYNC_TOKEN__")
+    expect(shText).toContain("list-all-conversations")
+
+    const ps1 = await fetch(`${base}/client/collect-from-dws.ps1.template`)
+    expect(ps1.status).toBe(200)
+    expect(await ps1.text()).toContain("__VAULT_ID__")
   })
 
   it("GET /app.js → 200 且为合法 JS（无 TS 注解）", async () => {
@@ -208,5 +278,53 @@ describe("POST /api/v1/sync/token/rotate", () => {
 
     const newAuth = await getStatus(base, VAULT_ID, newToken)
     expect(newAuth.status).toBe(200)
+  })
+
+  it("OAuth session 可轮换（无需先持有 Bearer）", async () => {
+    const dataDir = tempDataDir()
+    const { base, tokenStore, sessionCookie } = await startOAuthFileBacked(dataDir)
+    const oldToken = tokenStore.get()
+
+    const rotateResp = await fetch(`${base}/api/v1/sync/token/rotate`, {
+      method: "POST",
+      headers: { cookie: sessionCookie },
+    })
+    expect(rotateResp.status).toBe(200)
+    const body = (await rotateResp.json()) as Record<string, unknown>
+    expect(typeof body["token"]).toBe("string")
+    expect(body["token"]).not.toBe(oldToken)
+  })
+})
+
+describe("GET /api/v1/sync/token", () => {
+  it("无鉴权 → 401", async () => {
+    const { base } = await startFileBackedServer(tempDataDir())
+    const response = await fetch(`${base}/api/v1/sync/token`)
+    expect(response.status).toBe(401)
+  })
+
+  it("env 锁定 → 409，不回显 token", async () => {
+    const { base } = await startServer(tempDataDir())
+    const response = await fetch(`${base}/api/v1/sync/token`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    })
+    expect(response.status).toBe(409)
+    const body = (await response.json()) as Record<string, unknown>
+    expect(body["error"]).toBe("env_locked")
+    expect(body["token"]).toBeUndefined()
+  })
+
+  it("OAuth session + file-backed → 200 回显当前 token", async () => {
+    const dataDir = tempDataDir()
+    const { base, tokenStore, sessionCookie } = await startOAuthFileBacked(dataDir)
+    const response = await fetch(`${base}/api/v1/sync/token`, {
+      headers: { cookie: sessionCookie },
+    })
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as Record<string, unknown>
+    expect(body["ok"]).toBe(true)
+    expect(body["token"]).toBe(tokenStore.get())
+    expect(typeof body["prefix"]).toBe("string")
+    expect(body["envLocked"]).toBe(false)
   })
 })

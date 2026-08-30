@@ -1,0 +1,155 @@
+# MyContext 客户端采集（过渡）：本机 dws → POST /api/v1/channel-sync
+# 由 Web 页面下载生成。勿把含 token 的副本提交进 git。
+$ErrorActionPreference = "Stop"
+
+$SyncUrl = "__SYNC_URL__"
+$SyncToken = "__SYNC_TOKEN__"
+$VaultId = "__VAULT_ID__"
+$Hours = "__HOURS__"
+
+if ($args.Count -ge 2 -and $args[0] -eq "-Hours") {
+  $Hours = [string]$args[1]
+}
+
+if ([string]::IsNullOrWhiteSpace($SyncUrl) -or [string]::IsNullOrWhiteSpace($SyncToken) -or [string]::IsNullOrWhiteSpace($VaultId)) {
+  Write-Error "Sync URL / Token / Vault ID 为空。请在 Web 页登录后再下载本脚本。"
+}
+
+function Need-Cmd([string]$Name) {
+  if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
+    Write-Error "未找到命令 $Name。请先阅读 Web 页「客户端采集」说明。"
+  }
+}
+
+Need-Cmd curl
+Need-Cmd python
+if (-not (Get-Command dws -ErrorAction SilentlyContinue)) {
+  Write-Host "未找到 dws。请安装并登录："
+  Write-Host "  npm install -g dingtalk-workspace-cli@1.0.60"
+  Write-Host "  dws auth login"
+  exit 1
+}
+
+Write-Host "探活: dws contact user get-self …"
+& dws contact user get-self -f json | Out-Null
+
+$Tmp = Join-Path $env:TEMP ("mycontext-client-" + [guid]::NewGuid().ToString("n"))
+New-Item -ItemType Directory -Path $Tmp | Out-Null
+
+try {
+  Write-Host "拉取会话 list-all-conversations …"
+  & dws chat list-all-conversations --limit 100 -f json | Set-Content -Encoding utf8 (Join-Path $Tmp "conv.json")
+  Write-Host "拉取群 list-all 首页…"
+  & dws chat group list-all --limit 100 -f json | Set-Content -Encoding utf8 (Join-Path $Tmp "groups.json")
+
+  if ($Hours -ne "0") {
+    Write-Host "拉取近 ${Hours}h 消息 list-all 首页…"
+    $pyWindow = @"
+import datetime
+hours=int("$Hours")
+end=datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
+start=end-datetime.timedelta(hours=hours)
+fmt=lambda d: d.strftime("%Y-%m-%d %H:%M:%S")
+print(fmt(start))
+print(fmt(end))
+"@
+    $window = & python -c $pyWindow
+    $StartStr = $window[0]
+    $EndStr = $window[1]
+    & dws chat message list-all --start $StartStr --end $EndStr --cursor 0 --limit 100 -f json |
+      Set-Content -Encoding utf8 (Join-Path $Tmp "msg.json")
+  } else {
+    Write-Host "hours=0：只导会话"
+    Set-Content -Encoding utf8 (Join-Path $Tmp "msg.json") "{}"
+  }
+
+  # 复用与 .sh 相同的组装逻辑：调用嵌入的 python 文件更稳；此处下载页会附带同目录逻辑说明。
+  # 为减少双份维护，Windows 请优先：wsl bash collect-from-dws.sh，或安装 Git Bash 运行 .sh。
+  Write-Host "提示: 完整组装逻辑以 collect-from-dws.sh 为准。"
+  Write-Host "若本机有 bash（Git Bash / WSL），请改下 .sh 版本。"
+  Write-Host "正在用 python 组装（与 sh 模板同算法）…"
+
+  $Assemble = @'
+import json, sys, time, pathlib
+def unwrap(doc):
+  if isinstance(doc, dict) and isinstance(doc.get("result"), (dict, list)):
+    return doc["result"]
+  return doc
+def load(path):
+  raw = pathlib.Path(path).read_text(encoding="utf-8").strip()
+  if not raw: return {}
+  return unwrap(json.loads(raw))
+conv, groups, msg = load(sys.argv[1]), load(sys.argv[2]), load(sys.argv[3])
+out_path, vault_id = sys.argv[4], sys.argv[5]
+by_id = {}
+def put(raw, kind_default):
+  cid = raw.get("openConversationId")
+  if not isinstance(cid, str) or not cid or cid in by_id: return
+  single = raw.get("groupType") == "SINGLE_CHAT" or raw.get("singleChat") is True
+  by_id[cid] = {
+    "id": "chat:" + cid.replace("/", "_"),
+    "type": "chat",
+    "parent_id": "workspace:ali-ding",
+    "data": {
+      "title": raw.get("title") or raw.get("name"),
+      "chat_kind": "direct" if single else kind_default,
+      "openConversationId": cid,
+      "memberCount": raw.get("memberCount"),
+    },
+  }
+for raw in conv.get("conversations") or []:
+  if isinstance(raw, dict): put(raw, "group")
+for raw in groups.get("groups") or []:
+  if isinstance(raw, dict): put(raw, "group")
+scopes = [{"id":"workspace:ali-ding","type":"workspace","parent_id":None,"data":{"title":"钉钉工作区"}}]
+scopes.extend(by_id.values())
+records = []
+def walk(node):
+  if isinstance(node, list):
+    for x in node: walk(x); return
+  if not isinstance(node, dict): return
+  msgs = node.get("messages")
+  if isinstance(msgs, list):
+    cid = node.get("openConversationId")
+    for m in msgs:
+      if not isinstance(m, dict): continue
+      mid = m.get("openMessageId"); ocid = m.get("openConversationId") or cid
+      if not mid or not ocid: continue
+      scope_id = "chat:" + str(ocid).replace("/", "_")
+      records.append({"id": f"{scope_id}:{mid}", "scope_id": scope_id, "type": "message",
+        "data": {"openMessageId": mid, "openConversationId": ocid, "content": m.get("content") or "",
+          "createTime": m.get("createTime"), "sender": m.get("sender") or m.get("senderName") or "unknown",
+          "senderOpenDingTalkId": m.get("senderOpenDingTalkId") or m.get("openDingTalkId")}})
+  for v in node.values():
+    if isinstance(v, (dict, list)): walk(v)
+if isinstance(msg, dict): walk(msg)
+exported_at = int(time.time() * 1000)
+chat_count = max(0, len(scopes) - 1)
+manifest = {"source":"mycontext","dataset":"chat","scope_types":["workspace","chat"],"record_types":["message"],
+  "resource_kinds":[],"counts":{"scopes":chat_count,"records":len(records),"resources":0},"exported_at":exported_at,
+  "mycontext_bridge":{"client_script":"collect-from-dws.ps1","msg":"first page only"}}
+def lines(objs):
+  return "".join(json.dumps(o, ensure_ascii=False) + "\n" for o in objs) if objs else ""
+payload = {"manifest":{"vaultId":vault_id,"channelId":"dingtalk","exportedAt":exported_at,"sources":["chat"]},
+  "files":{"chat/manifest.json": json.dumps(manifest, ensure_ascii=False, indent=2)+"\n",
+    "chat/scopes.jsonl": lines(scopes), "chat/records.jsonl": lines(records), "chat/resources.jsonl": ""}}
+pathlib.Path(out_path).write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+print(f"组装完成: 会话 {chat_count}，消息 {len(records)}", file=sys.stderr)
+'@
+  $pyFile = Join-Path $Tmp "assemble.py"
+  Set-Content -Encoding utf8 $pyFile $Assemble
+  & python $pyFile (Join-Path $Tmp "conv.json") (Join-Path $Tmp "groups.json") (Join-Path $Tmp "msg.json") (Join-Path $Tmp "payload.json") $VaultId
+
+  Write-Host "POST $SyncUrl …"
+  $RespFile = Join-Path $Tmp "resp.json"
+  & curl.exe -sS -o $RespFile -w "%{http_code}" -X POST $SyncUrl `
+    -H "Authorization: Bearer $SyncToken" `
+    -H "Content-Type: application/json" `
+    --data-binary "@$($Tmp)\payload.json" | Tee-Object -Variable HttpCode | Out-Null
+  Get-Content $RespFile
+  if ($HttpCode -ne "200") { Write-Error "同步失败 HTTP $HttpCode" }
+  Write-Host "同步成功。请回 Web 页查看「同步状态」。"
+}
+finally {
+  Remove-Item -Recurse -Force $Tmp -ErrorAction SilentlyContinue
+}
