@@ -408,6 +408,9 @@
     "description": "Configure the model gateway used to draft replies and organize knowledge. Changes here apply globally.",
     "provider": {
       "baseUrl": "Endpoint",
+      "mainBaseUrl": "Main model endpoint",
+      "embedBaseUrl": "Embedding endpoint",
+      "klBaseUrl": "Knowledge-base endpoint",
       "apiKey": "API Key",
       "apiKeyPlaceholder": "Leave blank to keep unchanged",
       "modelMain": "Main model",

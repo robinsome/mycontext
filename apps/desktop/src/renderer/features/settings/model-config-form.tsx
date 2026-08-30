@@ -146,7 +146,9 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
   const klBaseUrlValue = klBaseUrl ?? current.klLlmBaseUrl.value
   /** 向量探测 / 展示用的生效地址：本区草稿优先，空则跟主模型草稿。 */
   const embedProbeUrl = embedBaseUrlValue.trim() !== "" ? embedBaseUrlValue : baseUrlValue
-  const klProbeUrl = klBaseUrlValue.trim() !== "" ? klBaseUrlValue : baseUrlValue  /**
+  const klProbeUrl = klBaseUrlValue.trim() !== "" ? klBaseUrlValue : baseUrlValue
+
+  /**
    * 有没有未保存的改动。
    *
    * 没有就把保存按钮禁掉 —— 否则点一下会显示「已保存」而其实什么都没提交
@@ -360,7 +362,7 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
         <span className="typography-body-base-500 text-[var(--text-base-primary)]">
           {t("model.provider.mainSection")}
         </span>
-        <Field label={t("model.provider.baseUrl")}>
+        <Field label={t("model.provider.mainBaseUrl")}>
           {(attributes) => (
             <Input
               {...attributes}
@@ -493,7 +495,7 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
           </span>
         </div>
 
-        <Field label={t("model.provider.baseUrl")}>
+        <Field label={t("model.provider.embedBaseUrl")}>
           {(attributes) => (
             <Input
               {...attributes}
@@ -678,7 +680,7 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
           </span>
         </div>
 
-        <Field label={t("model.provider.baseUrl")}>
+        <Field label={t("model.provider.klBaseUrl")}>
           {(attributes) => (
             <Input
               {...attributes}
