@@ -41,10 +41,16 @@
 | --- | --- | --- |
 | `MYCONTEXT_DWS_SIDECAR_IMAGE` | **是**（启用 sidecar 采集时） | 预构建镜像名，如 `mycontext-dws-sidecar:0.1.0`；web-server 通过 `docker run` 按 vault 拉起 |
 | `MYCONTEXT_DWS_SIDECAR_MAX_CONCURRENT` | 否 | 同时运行的 sidecar 容器上限，默认 `2` |
+| `MYCONTEXT_HOST_DATA_DIR` | **是**（web-server 在容器内且启用 sidecar 时） | 宿主机上 `mycontext-data` 卷的 mountpoint（或 bind mount 的 data 绝对路径）。compose 将其**同路径**再 bind 进 web-server，以便容器内 `docker --env-file` 能打开 sidecar 临时 env 文件；Node 仍经 `/data` 读写 |
 
-Compose 已在 **web-server** 挂载 `/var/run/docker.sock`（仅编排器用）。sidecar 容器只挂载该 vault 的 `dws-home` 目录，**不得**把 sock 传进 sidecar。
+Compose 已在 **web-server** 挂载 `/var/run/docker.sock`（仅编排器用）。sidecar 容器只挂载该 vault 的 `dws-home` 目录，**不得**把 sock 传进 sidecar。Sidecar token 经 **0600 env 文件 + `--env-file`** 注入（禁止 `docker run -e DWS_ACCESS_TOKEN=…`，避免进程列表泄漏）。
 
-**snap Docker 注意：** snap 版 Docker **看不到**宿主机 `/tmp` 挂载；数据卷、sidecar 临时 env 文件、B1 spike 目录须放在 **`$HOME/...`** 或 Compose 命名卷（如 `mycontext-data`）下，勿依赖 `/tmp`。部分 snap 环境还**拉不到** Docker Hub 的 `node:*` 基础镜像 —— 须在可联网机器预构建 sidecar 后 `docker save` / scp / `docker load`（见下文）。
+**snap Docker 注意：** snap 版 Docker **看不到**宿主机 `/tmp` 挂载；数据卷、sidecar 临时 env 文件、B1 spike 目录须放在 **`$HOME/...`** 或 Compose 命名卷（如 `mycontext-data`）下，勿依赖 `/tmp`。部分 snap 环境还**拉不到** Docker Hub 的 `node:*` 基础镜像 —— 须在可联网机器预构建 sidecar 后 `docker save` / scp / `docker load`（见下文）。web-server 镜像内**不含** docker CLI —— snap 部署时在 compose 中额外 bind 宿主机二进制，例如：
+
+```yaml
+# deploy/docker-compose.yml → web-server.volumes 追加一行（路径以 which docker 为准）
+- /snap/docker/current/bin/docker:/usr/local/bin/docker:ro
+```
 
 ## 构建 dws sidecar 镜像
 

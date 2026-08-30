@@ -32,9 +32,13 @@ services:
       OAUTH_REDIRECT_URI: ${OAUTH_REDIRECT_URI:-}
       MYCONTEXT_DWS_SIDECAR_IMAGE: ${MYCONTEXT_DWS_SIDECAR_IMAGE:-}
       MYCONTEXT_DWS_SIDECAR_MAX_CONCURRENT: ${MYCONTEXT_DWS_SIDECAR_MAX_CONCURRENT:-2}
+      # web-server 在容器内 spawn sidecar 时，-v/--env-file 须映射为宿主机 data 根（snap 等同）
+      MYCONTEXT_HOST_DATA_DIR: ${MYCONTEXT_HOST_DATA_DIR:-}
     volumes:
       - mycontext-data:/data
       - /var/run/docker.sock:/var/run/docker.sock
+      # 与 MYCONTEXT_HOST_DATA_DIR 同路径 bind，使容器内 docker CLI 能打开 --env-file 宿主机路径
+      - ${MYCONTEXT_HOST_DATA_DIR}:${MYCONTEXT_HOST_DATA_DIR}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]

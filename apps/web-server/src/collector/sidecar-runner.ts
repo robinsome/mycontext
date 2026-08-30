@@ -143,10 +143,51 @@ async function runProcess(
   })
 }
 
-function writeSidecarEnvFile(configDir: string, vaultId: string, accessToken: string): string {
-  const envPath = join(dirname(configDir), `.sidecar-env-${vaultId}`)
-  writeFileSync(envPath, `DWS_ACCESS_TOKEN=${accessToken}\n`, { mode: 0o600, encoding: "utf8" })
-  return envPath
+/** web-server 在容器内时，docker.sock spawn 的 -v/--env-file 须用宿主机路径。 */
+export function resolveHostPath(containerPath: string): string {
+  const hostDataDir = process.env["MYCONTEXT_HOST_DATA_DIR"]
+  const dataDir = process.env["MYCONTEXT_DATA_DIR"] ?? "/data"
+  if (hostDataDir !== undefined && hostDataDir !== "" && containerPath.startsWith(`${dataDir}/`)) {
+    return join(hostDataDir, containerPath.slice(dataDir.length + 1))
+  }
+  if (hostDataDir !== undefined && hostDataDir !== "" && containerPath === dataDir) {
+    return hostDataDir
+  }
+  return containerPath
+}
+
+/** 0600 env 文件：Node 写容器路径（MYCONTEXT_DATA_DIR 下），docker 读宿主机路径。 */
+export function sidecarEnvContainerPath(configDir: string, vaultId: string): string {
+  return join(dirname(configDir), `.sidecar-env-${vaultId}`)
+}
+
+function writeSidecarEnvFile(containerPath: string, accessToken: string): void {
+  mkdirSync(dirname(containerPath), { recursive: true, mode: 0o700 })
+  writeFileSync(containerPath, `DWS_ACCESS_TOKEN=${accessToken}\n`, { mode: 0o600, encoding: "utf8" })
+}
+
+/** 构造 sidecar `docker run` argv；token 仅经 --env-file，禁止 `-e DWS_ACCESS_TOKEN`。 */
+export function buildSidecarDockerArgs(input: {
+  image: string
+  hostConfigDir: string
+  hostEnvFile: string
+  script: string
+}): string[] {
+  return [
+    "run",
+    "--rm",
+    "-e",
+    "DWS_CONFIG_DIR=/dws-home",
+    "--env-file",
+    input.hostEnvFile,
+    "-v",
+    `${input.hostConfigDir}:/dws-home`,
+    "--entrypoint",
+    "bash",
+    input.image,
+    "-lc",
+    input.script,
+  ]
 }
 
 export function createDockerSidecarRunner(options: {
@@ -162,29 +203,25 @@ export function createDockerSidecarRunner(options: {
     assertAllowlistedDwsArgs(req.dwsArgs)
 
     const release = await gate.acquire()
-    let envPath: string | undefined
+    let envContainerPath: string | undefined
     try {
       mkdirSync(req.configDir, { recursive: true, mode: 0o700 })
-      envPath = writeSidecarEnvFile(req.configDir, req.vaultId, req.accessToken)
 
       const businessCmd = ["dws", ...req.dwsArgs].map(shellSingleQuote).join(" ")
       const script =
         `dws auth login --token "$DWS_ACCESS_TOKEN" -y && ${businessCmd}`
 
-      const dockerArgs = [
-        "run",
-        "--rm",
-        "-e",
-        "DWS_CONFIG_DIR=/dws-home",
-        "-v",
-        `${req.configDir}:/dws-home`,
-        "--env-file",
-        envPath,
-        options.image,
-        "bash",
-        "-lc",
+      const hostConfigDir = resolveHostPath(req.configDir)
+      envContainerPath = sidecarEnvContainerPath(req.configDir, req.vaultId)
+      writeSidecarEnvFile(envContainerPath, req.accessToken)
+      const hostEnvFile = resolveHostPath(envContainerPath)
+
+      const dockerArgs = buildSidecarDockerArgs({
+        image: options.image,
+        hostConfigDir,
+        hostEnvFile,
         script,
-      ]
+      })
 
       const { exitCode, stdout, stderr } = await runProcess(dockerBin, dockerArgs)
       const detail = summarizeOutput(stdout, stderr, req.accessToken)
@@ -207,9 +244,9 @@ export function createDockerSidecarRunner(options: {
         detail: redactSidecarDetail(message, req.accessToken),
       }
     } finally {
-      if (envPath !== undefined) {
+      if (envContainerPath !== undefined) {
         try {
-          rmSync(envPath, { force: true })
+          rmSync(envContainerPath, { force: true })
         } catch {
           // 清理失败不掩盖业务结果
         }
