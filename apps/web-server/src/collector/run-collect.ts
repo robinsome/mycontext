@@ -10,6 +10,7 @@ import {
   type OpenApiCapabilityRow,
 } from "@mycontext/channels"
 import { exportRootForVault } from "../routes/channel-sync.js"
+import { defaultCallMapped, type CallMappedFn } from "./openapi-client.js"
 
 export interface CollectCapabilityOutcome {
   command: string
@@ -23,8 +24,8 @@ export interface CollectRunInput {
   accessToken: string
   /** 可选过滤 dws 命令键 */
   commandKeys?: string[]
-  /** 测试注入：mapped 行的 HTTP 调用 */
-  callMapped?: (row: OpenApiCapabilityRow, accessToken: string) => Promise<CollectCapabilityOutcome>
+  /** 测试注入；默认 defaultCallMapped */
+  callMapped?: CallMappedFn
 }
 
 export interface CollectRunResult {
@@ -55,6 +56,7 @@ export async function runCapabilityCollect(input: CollectRunInput): Promise<Coll
 
   const filter = input.commandKeys !== undefined ? new Set(input.commandKeys) : null
   const results: CollectCapabilityOutcome[] = []
+  const callMapped = input.callMapped ?? defaultCallMapped
 
   for (const row of OPENAPI_CAPABILITY_MATRIX) {
     const key = dwsCommandKey(row.dwsCommand)
@@ -69,7 +71,8 @@ export async function runCapabilityCollect(input: CollectRunInput): Promise<Coll
       continue
     }
 
-    if (row.status === "deferred" || row.openApi === null) {
+    if (row.status === "deferred" || row.status === "sidecar" || row.openApi === null) {
+      // sidecar：Task 4 接入 dws-sidecar；此处暂记 deferred 等价，避免静默成功
       results.push({
         command: key,
         status: "deferred",
@@ -80,14 +83,10 @@ export async function runCapabilityCollect(input: CollectRunInput): Promise<Coll
 
     // mapped
     try {
-      const outcome =
-        input.callMapped !== undefined
-          ? await input.callMapped(row, input.accessToken)
-          : {
-              command: key,
-              status: "error" as const,
-              detail: "未配置 callMapped / 生产 HTTP 客户端尚未接入该 path",
-            }
+      const outcome = await callMapped(row, {
+        accessToken: input.accessToken,
+        exportRoot,
+      })
       results.push({ ...outcome, command: key })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -99,7 +98,6 @@ export async function runCapabilityCollect(input: CollectRunInput): Promise<Coll
     mode: 0o600,
   })
 
-  // 有任意 ok 或仅进度时仍写最小四件套，避免静默无目录；内容注记 deferred 为主
   const okCount = results.filter((r) => r.status === "ok").length
   writeMinimalChatExport(
     exportRoot,
@@ -108,3 +106,5 @@ export async function runCapabilityCollect(input: CollectRunInput): Promise<Coll
 
   return { exportRoot, results }
 }
+
+export type { OpenApiCapabilityRow }

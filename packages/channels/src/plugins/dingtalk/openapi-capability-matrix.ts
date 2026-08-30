@@ -7,6 +7,7 @@
  * 只描述 `dws` CLI 语义，**不是** HTTP path 说明书；本表是唯一允许的调度清单。
  *
  * · `mapped`：已填 `openApi`（须经开放平台文档 + 实测）；采集器可调用。
+ * · `sidecar`：无公开 HTTP path，由 dws-sidecar 执行（用户 token + MCP/CLI）。
  * · `deferred`：语义来自 skill/白名单，HTTP 路径待实测；不得当成功跳过。
  * · `unsupported`：开放平台无等价或模型不同（如个人 Stream vs 企业回调）。
  *
@@ -15,7 +16,7 @@
  */
 export type OpenApiAuthKind = "user"
 
-export type OpenApiCapabilityStatus = "mapped" | "deferred" | "unsupported"
+export type OpenApiCapabilityStatus = "mapped" | "sidecar" | "deferred" | "unsupported"
 
 export interface OpenApiEndpoint {
   method: "GET" | "POST" | "PUT" | "DELETE"
@@ -48,9 +49,13 @@ export const OPENAPI_CAPABILITY_MATRIX: readonly OpenApiCapabilityRow[] = [
   {
     dwsCommand: ["contact", "user", "get-self"],
     skillRef: "dingtalk-contact/SKILL.md",
-    status: "deferred",
-    openApi: null,
-    notes: "MVP 首波：用户 token 调 contact/users/me（path 待实测写入）。",
+    status: "mapped",
+    openApi: {
+      method: "GET",
+      path: "/v1.0/contact/users/me",
+      auth: "user",
+    },
+    notes: "用户 token；实测 path。响应含 openId/unionId/nick 等；落盘 identity/me.json。",
   },
   {
     dwsCommand: ["contact", "user", "search"],
@@ -104,16 +109,19 @@ export const OPENAPI_CAPABILITY_MATRIX: readonly OpenApiCapabilityRow[] = [
   {
     dwsCommand: ["chat", "list-all-conversations"],
     skillRef: "dingtalk-chat/references/chat/chat-conversation.md",
-    status: "deferred",
+    status: "sidecar",
     openApi: null,
-    notes: "MVP 首波；注意 dws 侧 cursor 缺陷，OpenAPI 分页以实测为准。",
+    notes:
+      "B1 spike 2026-08-30：网页 OAuth userAccessToken + dws auth login --token 可走 MCP list_all_conversations。" +
+      "无公开用户 token HTTP path；由 dws-sidecar 执行，禁止 App token / qyapi_chat_*。",
   },
   {
     dwsCommand: ["chat", "group", "list-all"],
     skillRef: "dingtalk-chat/references/chat/group-discovery.md",
     status: "deferred",
     openApi: null,
-    notes: "MVP 首波；补会话列表分页。",
+    notes:
+      "2026-08-30 实测：dws 同走 MCP（list_my_groups_pagination → mcp-gw），非公开 OpenAPI；与 list-all-conversations 同缺口。",
   },
   {
     dwsCommand: ["chat", "group", "members", "list-by-ids"],

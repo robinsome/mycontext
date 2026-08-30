@@ -23,9 +23,11 @@ describe("openapi-capability-matrix", () => {
     const row = matrixRowForCommand(["contact", "user", "get-self"])
     expect(row).toBeDefined()
     expect(row?.skillRef).toContain("dingtalk-contact")
+    expect(row?.status).toBe("mapped")
+    expect(row?.openApi?.path).toBe("/v1.0/contact/users/me")
   })
 
-  it("mapped 行必须带 openApi；deferred/unsupported 的 openApi 为 null", () => {
+  it("mapped 行必须带 openApi；sidecar/deferred/unsupported 的 openApi 为 null", () => {
     for (const row of OPENAPI_CAPABILITY_MATRIX) {
       if (row.status === "mapped") {
         expect(row.openApi, dwsCommandKey(row.dwsCommand)).not.toBeNull()
@@ -55,5 +57,13 @@ describe("openapi-capability-matrix", () => {
   it("个人 Stream 事件在本阶段为 deferred（与企业回调模型不同）", () => {
     const row = matrixRowForCommand(["event", "consume", "user_im_message_receive_at"])
     expect(row?.status).toBe("deferred")
+  })
+
+  it("list-all-conversations is sidecar (not mapped HTTP)", () => {
+    const row = OPENAPI_CAPABILITY_MATRIX.find(
+      (r) => dwsCommandKey(r.dwsCommand) === "chat list-all-conversations",
+    )
+    expect(row?.status).toBe("sidecar")
+    expect(row?.openApi).toBeNull()
   })
 })
