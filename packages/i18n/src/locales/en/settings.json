@@ -425,7 +425,7 @@
       "mainProtocolHint": "Only for OpenAI-compatible gateway fallback when Agent is unavailable. With local CLI / Agent Key, chat uses the Cursor subscription default model and ignores this main-model name."
     },
     "kl": {
-      "title": "Use a different model for the knowledge base",
+      "title": "Knowledge base",
       "hint": "Leave Endpoint / Key blank to follow main settings; Test connection probes this section’s gateway.",
       "inherited": "Follows main settings",
       "baseUrlPlaceholder": "Leave blank to follow main settings",

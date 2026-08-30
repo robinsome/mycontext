@@ -402,7 +402,7 @@ describe("★ 模型那一步：用交互承载信息，不是堆 tips", () => {
 
     // 停在模型步：接口地址那个输入框在
     await waitFor(() => {
-      expect(screen.getAllByLabelText("接口地址").length).toBeGreaterThan(0)
+      expect(screen.getAllByLabelText("主模型接口地址").length).toBeGreaterThan(0)
     })
     // 页标题在（外层那一层说明保留）。步骤条上也有同名一项，所以按 heading 取
     expect(screen.getByRole("heading", { name: "配置模型" })).toBeTruthy()
@@ -421,7 +421,7 @@ describe("★ 模型那一步：用交互承载信息，不是堆 tips", () => {
     renderView()
 
     await waitFor(() => {
-      expect(screen.getAllByLabelText("接口地址").length).toBeGreaterThan(0)
+      expect(screen.getAllByLabelText("主模型接口地址").length).toBeGreaterThan(0)
     })
     // 桩里 configured:false → 显示「未配置」短标签（网关 key + Agent key 都可能出现）
     expect(screen.getAllByText("未配置").length).toBeGreaterThanOrEqual(1)
@@ -429,7 +429,7 @@ describe("★ 模型那一步：用交互承载信息，不是堆 tips", () => {
     expect(screen.queryByText(/尚未配置/)).toBeNull()
   })
 
-  it("KL 单独配置默认折叠，且收起时也能看到实际生效的模型", async () => {
+  it("知识库是一级分区（不再折叠），能看到实际生效模型", async () => {
     installApi([
       step("channel", "done"),
       step("model", "pending"),
@@ -440,18 +440,11 @@ describe("★ 模型那一步：用交互承载信息，不是堆 tips", () => {
     renderView()
 
     await waitFor(() => {
-      expect(screen.getAllByLabelText("接口地址").length).toBeGreaterThan(0)
+      expect(screen.getAllByLabelText("主模型接口地址").length).toBeGreaterThan(0)
     })
-    // 折叠标题在（Disclosure 的 title）
-    expect(screen.getByText("知识库单独用别的模型")).toBeTruthy()
-    /**
-     * ★ 收起时也要能看到当前实际生效的模型（Disclosure 的 summary）——
-     * 看一个值不该先展开一块区域。桩里 klEffective.model = glm-5.2。
-     *
-     * 用 getAllBy：`glm-5.2` 现在**本该**出现多次（选中的模型 chip +
-     * 这个 summary）—— 那是两处不同的信息，不是重复渲染。
-     */
-    expect(screen.getAllByText("glm-5.2").length).toBeGreaterThan(1)
+    expect(screen.getByText("知识库")).toBeTruthy()
+    expect(screen.queryByText("知识库单独用别的模型")).toBeNull()
+    expect(screen.getAllByText("glm-5.2").length).toBeGreaterThan(0)
   })
 
   /**
@@ -471,7 +464,7 @@ describe("★ 模型那一步：用交互承载信息，不是堆 tips", () => {
     renderView()
 
     await waitFor(() => {
-      expect(screen.getAllByLabelText("接口地址").length).toBeGreaterThan(0)
+      expect(screen.getAllByLabelText("主模型接口地址").length).toBeGreaterThan(0)
     })
     expect(screen.getByText("保存并继续").closest("button")?.disabled).toBe(true)
   })
@@ -487,10 +480,10 @@ describe("★ 模型那一步：用交互承载信息，不是堆 tips", () => {
     renderView()
 
     await waitFor(() => {
-      expect(screen.getAllByLabelText("接口地址").length).toBeGreaterThan(0)
+      expect(screen.getAllByLabelText("主模型接口地址").length).toBeGreaterThan(0)
     })
     // 先改一处（否则按钮是禁用的 —— 见上一条）
-    const baseInputs = screen.getAllByLabelText("接口地址")
+    const baseInputs = screen.getAllByLabelText("主模型接口地址")
     fireEvent.change(baseInputs[0]!, { target: { value: "https://gw.example" } })
 
     // onboarding 里按钮文案走 settings 命名空间 —— 这一条同时锁住
@@ -522,12 +515,12 @@ describe("★ 模型那一步：用交互承载信息，不是堆 tips", () => {
     renderView()
 
     await waitFor(() => {
-      expect(screen.getAllByLabelText("接口地址").length).toBeGreaterThan(0)
+      expect(screen.getAllByLabelText("主模型接口地址").length).toBeGreaterThan(0)
     })
     // 探测前：网关独有的那个模型不在（显示的是内置推荐档位）
     expect(screen.queryByText("gateway-only-model")).toBeNull()
 
-    fireEvent.click(screen.getByText("测试连接"))
+    fireEvent.click(screen.getAllByText("测试连接")[0]!)
 
     // 探测后：绿灯 + 网关真实列表里的模型出现在 chips 里
     // （主模型与 KL 模型两处 chips 都会用探到的列表，所以是 getAll）
@@ -550,9 +543,9 @@ describe("★ 模型那一步：用交互承载信息，不是堆 tips", () => {
     renderView()
 
     await waitFor(() => {
-      expect(screen.getAllByLabelText("接口地址").length).toBeGreaterThan(0)
+      expect(screen.getAllByLabelText("主模型接口地址").length).toBeGreaterThan(0)
     })
-    fireEvent.click(screen.getByText("测试连接"))
+    fireEvent.click(screen.getAllByText("测试连接")[0]!)
 
     await waitFor(() => {
       expect(screen.getByText("密钥不对，换一把再试")).toBeTruthy()

@@ -103,9 +103,9 @@ describe("★ 测试连接的结果对应当前输入（不给假反馈）", () 
     installApi()
     renderForm()
 
-    // 等表单读到配置渲染出来
-    await screen.findByText("测试连接")
-    fireEvent.click(screen.getByText("测试连接"))
+    // 等表单读到配置渲染出来（主/向量/知识库各有「测试连接」）
+    const probeButtons = await screen.findAllByText("测试连接")
+    fireEvent.click(probeButtons[0]!)
 
     // 探测成功：出现"来自网关"标签（它只在 result.ok 且有模型时出现）
     await waitFor(() => expect(screen.queryByText(/来自网关/)).not.toBeNull())
@@ -122,8 +122,8 @@ describe("★ 测试连接的结果对应当前输入（不给假反馈）", () 
     installApi()
     renderForm()
 
-    await screen.findByText("测试连接")
-    fireEvent.click(screen.getByText("测试连接"))
+    const probeButtons = await screen.findAllByText("测试连接")
+    fireEvent.click(probeButtons[0]!)
     await waitFor(() => expect(screen.queryByText(/来自网关/)).not.toBeNull())
 
     // 当前 modelMain 是 glm-5.2，它**在**列表里 → 不该警告

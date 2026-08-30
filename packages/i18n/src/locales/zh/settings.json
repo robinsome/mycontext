@@ -425,7 +425,7 @@
       "mainProtocolHint": "仅用于无 Agent 时的网关回落（直连归纳）。有本机 CLI / Agent Key 时，对话走 Cursor 订阅默认模型，不读这里的主模型名。"
     },
     "kl": {
-      "title": "知识库单独用别的模型",
+      "title": "知识库",
       "hint": "接口地址 / Key 留空则跟随主配置；点「测试连接」测的是本区网关。",
       "inherited": "跟随主配置",
       "baseUrlPlaceholder": "留空则跟随主配置",
