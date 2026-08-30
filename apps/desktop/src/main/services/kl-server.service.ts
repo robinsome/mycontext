@@ -37,6 +37,7 @@ import {
 } from "@mycontext/ipc-contract"
 import type { KlGraphOverview } from "@mycontext/ipc-contract"
 import type { DuplexHandle, ProcessRunner } from "@mycontext/runtime-env"
+import { buildIngestRequestBody, postKlIngest } from "@mycontext/sync-contract"
 
 /**
  * `facts` 表上「旧代」与「当代」的那一列。
@@ -3305,33 +3306,14 @@ function defaultSleep(ms: number): Promise<void> {
  * 扫"或"某渠道的新导出被当成已处理过"。所以用 channelId：每渠道一个、
  * 且重启后不变。
  */
-export function buildIngestRequestBody(
-  exportDir: string,
-  sourceId: string,
-): Record<string, unknown> {
-  return { input_dir: exportDir, source_id: sourceId }
-}
+export { buildIngestRequestBody } from "@mycontext/sync-contract"
 
 async function defaultPostIngest(
   port: number,
   exportDir: string,
   sourceId: string,
 ): Promise<number> {
-  const response = await fetch(`http://127.0.0.1:${port}/ingest`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    /**
-     * `input_dir` 显式给：server 侧默认读它自己的 `KL_DWS_EXPORT_DIR`，
-     * 而我们的导出目录按 vault + 渠道定 —— 让它跟着我们走，别各有一份真源。
-     *
-     * ★ 只发这两个键。`concurrency` / `improve_mode` 有服务端默认值，
-     * 而 forbid 意味着"发一个它不认识的就整个请求失败"—— 能不发就不发。
-     */
-    body: JSON.stringify(buildIngestRequestBody(exportDir, sourceId)),
-    // 启动是非阻塞的，10s 足够；真正的等待在 /status 轮询里。
-    signal: AbortSignal.timeout(10_000),
-  })
-  return response.status
+  return postKlIngest(port, exportDir, sourceId)
 }
 
 /**

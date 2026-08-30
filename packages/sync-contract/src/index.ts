@@ -13,3 +13,11 @@ export {
   isSafePathSegment,
   vaultIdSchema,
 } from "./channel-sync.js"
+export {
+  GRAPH_BUILD_ERROR,
+  graphBuildRequestSchema,
+  hasIngestibleExport,
+  type GraphBuildErrorCode,
+  type GraphBuildRequest,
+} from "./graph-build.js"
+export { buildIngestRequestBody, postKlIngest } from "./kl-ingest-http.js"

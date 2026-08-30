@@ -159,6 +159,9 @@ importers:
       '@mycontext/store':
         specifier: workspace:*
         version: link:../../packages/store
+      '@mycontext/sync-contract':
+        specifier: workspace:*
+        version: link:../../packages/sync-contract
       '@tanstack/react-query':
         specifier: 5.90.10
         version: 5.90.10(react@19.2.1)

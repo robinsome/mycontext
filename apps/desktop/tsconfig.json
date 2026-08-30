@@ -53,6 +53,9 @@
     },
     {
       "path": "../../packages/persona"
+    },
+    {
+      "path": "../../packages/sync-contract"
     }
   ]
 }

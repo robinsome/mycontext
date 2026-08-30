@@ -27,6 +27,7 @@
     "@mycontext/retrieval": "workspace:*",
     "@mycontext/runtime-env": "workspace:*",
     "@mycontext/store": "workspace:*",
+    "@mycontext/sync-contract": "workspace:*",
     "@tanstack/react-query": "5.90.10",
     "better-sqlite3": "12.11.1",
     "framer-motion": "12.43.0",

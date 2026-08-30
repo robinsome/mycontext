@@ -27,7 +27,7 @@
  * body 断言，而不是对着形参。
  */
 import { describe, expect, it } from "vitest"
-import { buildIngestRequestBody } from "@main/services/kl-server.service.js"
+import { buildIngestRequestBody } from "@mycontext/sync-contract"
 
 const EXPORT_DIR = "/tmp/vault-fake/exports/dws"
 const SOURCE_ID = "dingtalk"
