@@ -131,12 +131,16 @@ mac:
     # 日常迭代用 `pnpm dist:mac`（只出 dir，快得多）。
     - target: dir
       arch: [arm64]
-  # ★ 不签名、不公证：还没有 Apple Developer 证书。
+  # ★ 没有 Apple Developer 证书：用 ad-hoc 签名（`identity: "-"`），
+  # **不要** `null`。`null` 会完全跳过 codesign —— 在 Apple Silicon + 隔离属性下
+  # Gatekeeper 会报「已损坏，无法打开」（像文件坏了），而不是可点「仍要打开」的
+  # 「无法验证开发者」。ad-hoc 后仍须用户在「隐私与安全性」里允许一次，或：
+  #   xattr -dr com.apple.quarantine /Applications/MyContext.app
+  # 真·公证 / Developer ID 以后再换。
   #
-  # 后果要说清：同事拿到 .app 会被 Gatekeeper 拦，需要右键打开或
-  # `xattr -dr com.apple.quarantine <app>`。而 hardenedRuntime 必须**关**——
-  # 开了它但不签名的话，那些 entitlement 反而会让进程起不来。
-  identity: null
+  # hardenedRuntime 必须**关**：ad-hoc + hardenedRuntime 会强制 library validation，
+  # 未公证时 native 模块（better-sqlite3）容易起不来。
+  identity: "-"
   hardenedRuntime: false
   gatekeeperAssess: false
 
