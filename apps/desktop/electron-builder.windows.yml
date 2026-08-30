@@ -7,6 +7,10 @@ appId: com.mycontext.app
 productName: MyContext
 copyright: Copyright © 2026 MyContext
 
+# CI 里 better-sqlite3 已由 dist:win 换好 win32 预编译；再跑 npmRebuild
+# 会触发 node-gyp，Windows runner 上既慢又容易挂。
+npmRebuild: false
+
 extraMetadata:
   main: apps/desktop/out/main/index.js
   productName: MyContext
