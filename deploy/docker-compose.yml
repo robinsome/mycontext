@@ -6,6 +6,9 @@
 # 用法（在仓库根目录）：
 #   cp deploy/.env.example deploy/.env   # 编辑 token
 #   docker compose -f deploy/docker-compose.yml up -d --build
+#
+# 生产默认仅绑定宿主机回环（127.0.0.1:8787），经 Caddy/nginx 反代对外；
+# 勿把 0.0.0.0:8787 直接暴露公网。局域网调试可在 deploy/.env 设 MYCONTEXT_PUBLISH_BIND=0.0.0.0。
 
 services:
   web-server:
@@ -13,7 +16,7 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile
     ports:
-      - "${MYCONTEXT_PUBLISH_PORT:-8787}:8787"
+      - "${MYCONTEXT_PUBLISH_BIND:-127.0.0.1}:${MYCONTEXT_PUBLISH_PORT:-8787}:8787"
     environment:
       MYCONTEXT_DATA_DIR: /data
       MYCONTEXT_PORT: "8787"

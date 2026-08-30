@@ -1,0 +1,18 @@
+# deploy/Dockerfile 构建上下文（context = 仓库根）。缩小 COPY 面，加快 build。
+.git
+.worktrees
+.superpowers
+node_modules
+**/node_modules
+.env
+.env.*
+!.env.example
+*.db
+*.sqlite
+coverage
+dist
+tests
+docs
+vendor
+apps/desktop
+kl-graph

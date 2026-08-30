@@ -41,18 +41,20 @@
 ```bash
 cp deploy/.env.example deploy/.env
 # 编辑 deploy/.env：设置 MYCONTEXT_SYNC_TOKEN（强随机字符串）
+# 生产默认 MYCONTEXT_PUBLISH_BIND=127.0.0.1（仅本机反代可达，勿把 8787 裸奔到公网）
 
 docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
-验证：
+验证（默认绑定回环，须在 Ubuntu 本机或经 SSH 隧道执行）：
 
 ```bash
 curl -sS http://127.0.0.1:8787/health
 # 期望：{"ok":true}
 ```
 
-浏览器打开 `http://<服务器>:8787/`（生产请改走 HTTPS 域名），可查看同步状态与 token 设置页。
+浏览器：生产经 **HTTPS 域名**（反代到 `127.0.0.1:8787`）打开 `/`；勿依赖公网直连 `:8787`。
+仅在局域网调试且已知情风险时，可在 `deploy/.env` 设 `MYCONTEXT_PUBLISH_BIND=0.0.0.0`。
 
 ### 环境变量
 
@@ -68,6 +70,7 @@ Compose 额外变量（写在 `deploy/.env`）：
 
 | 变量 | 说明 |
 | --- | --- |
+| `MYCONTEXT_PUBLISH_BIND` | 宿主机绑定地址，**生产默认 `127.0.0.1`**（仅本机反代）；局域网调试可设 `0.0.0.0` |
 | `MYCONTEXT_PUBLISH_PORT` | 宿主机映射端口，默认 `8787` |
 
 ---
@@ -113,7 +116,7 @@ your-domain.example {
 }
 ```
 
-Caddy 默认自动申请证书。Compose 将 `8787` 绑定到 `127.0.0.1` 时，可把 `ports` 改为 `"127.0.0.1:8787:8787"`，仅本机反代可达。
+Caddy 默认自动申请证书。仓库 compose **默认** `"127.0.0.1:8787:8787"`（`MYCONTEXT_PUBLISH_BIND`），反代只需连本机回环。
 
 ### nginx（示例）
 
@@ -187,9 +190,40 @@ export MYCONTEXT_SYNC_TOKEN="<与服务端一致>"
 
 ## kl-server（同机，MVP 可选）
 
-`POST /api/v1/graph/build` 会向同机 `KL_SERVER_PORT`（默认 `8200`）发起 ingest。
-MVP compose **未**打包 kl-server；需要建图时在 Ubuntu **同机**按现有 kl 文档启动服务，
-并保证 web-server 容器能访问该端口（例如 host 网络、额外 compose 服务或 `host.docker.internal`，按你的网络方案配置）。
+`POST /api/v1/graph/build` 会向 **`http://127.0.0.1:${KL_SERVER_PORT}/ingest`** 发起请求（默认端口 `8200`）。
+
+**容器网络要点：** bridge 网络里，容器内的 `127.0.0.1` **不是** Ubuntu 宿主机。kl 若跑在宿主机而 web-server 在默认 bridge 容器内，建图会连到容器自身而非 kl。
+
+MVP compose **未**打包 kl-server。同机 kl 就绪后，任选其一（二选一即可）：
+
+### 方案 A：`network_mode: host`（与当前代码最省事）
+
+web-server 与宿主机共享网络栈，容器内 `127.0.0.1:8200` 即宿主机 kl。在 `deploy/docker-compose.yml` 的 `web-server` 下增加 `network_mode: host`，并**去掉** `ports` 映射（host 模式下无效）：
+
+```yaml
+services:
+  web-server:
+    network_mode: host
+    # ports:  # host 模式下删除
+    environment:
+      MYCONTEXT_PORT: "8787"
+      KL_SERVER_PORT: "8200"
+```
+
+宿主机上先启动 kl（监听 `127.0.0.1:8200`），再 `docker compose up`。
+
+### 方案 B：bridge + `host.docker.internal`（需后续支持 kl 主机名）
+
+若坚持 bridge 网络，须让 ingest 目标指向宿主机而非容器回环。Linux Compose 可预留：
+
+```yaml
+services:
+  web-server:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+```
+
+**当前实现** ingest URL 仍写死 `127.0.0.1`，此方案**尚不可用**，除非后续增加 `KL_SERVER_HOST=host.docker.internal`（或等价配置）。MVP+ 同机 kl 请优先用方案 A。
 
 后续可将 kl 作为 sidecar 纳入 compose；当前以「web-server 先通、kl 后接」为验收顺序。
 
@@ -219,7 +253,7 @@ MVP compose **未**打包 kl-server；需要建图时在 Ubuntu **同机**按现
 | `curl /health` 连接拒绝 | 检查 `MYCONTEXT_PUBLISH_PORT`、防火墙、compose 是否 `up` |
 | 推送 HTTP 401 | 本机 `MYCONTEXT_SYNC_TOKEN` 与服务端不一致 |
 | 推送 HTTP 404 | `MYCONTEXT_SYNC_URL` 路径应为 `.../api/v1/channel-sync` |
-| 建图失败 / kl 相关 | 确认同机 kl-server 监听 `KL_SERVER_PORT`；MVP 可仅验收到「有导出」 |
+| 建图失败 / kl 相关 | kl 是否在**宿主机** `127.0.0.1:8200`？bridge 容器内 `127.0.0.1` 连不到宿主机 kl → 改用 `network_mode: host`；MVP 可仅验收到「有导出」 |
 | `dws 探活失败` | 本机执行 `dws auth login`；或先用 `--fixture` 验 API |
 
 ---
