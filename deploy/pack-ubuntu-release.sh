@@ -63,6 +63,9 @@ dws-sidecar 归档: $(basename "$SIDECAR_ARCHIVE")
 
 2) 配置环境（勿提交真实 Secret）
    cp .env.example .env
+   # 离线 load 后 compose 默认指向 GHCR，须改本地镜像名：
+   #   MYCONTEXT_IMAGE=mycontext-web-server
+   #   MYCONTEXT_PULL_POLICY=missing
    # 编辑 DINGTALK_* / OAUTH_REDIRECT_URI / MYCONTEXT_SYNC_TOKEN
    # 设置 MYCONTEXT_DWS_SIDECAR_IMAGE=${SIDECAR_IMAGE}
 

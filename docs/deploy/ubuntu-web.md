@@ -144,7 +144,17 @@ docker compose -f deploy/docker-compose.yml up -d
 #   以及同目录 docker-compose.yml、.env.example、README-LOAD.txt
 ```
 
-Ubuntu 上：**两个** tar.gz 都要 `docker load -i …`，再按 `README-LOAD.txt` 配 `.env`（含 `MYCONTEXT_DWS_SIDECAR_IMAGE`）并 `docker compose up -d`。
+Ubuntu 上：**两个** tar.gz 都要 `docker load -i …`，再配 `.env` 并 `docker compose up -d`。
+
+**重要：** `docker load` 后的本地镜像名为 `mycontext-web-server:<tag>`，而 compose 默认拉 GHCR。离线部署须在 `deploy/.env` 显式设置：
+
+```bash
+MYCONTEXT_IMAGE=mycontext-web-server
+MYCONTEXT_PULL_POLICY=missing
+MYCONTEXT_DWS_SIDECAR_IMAGE=mycontext-dws-sidecar:0.1.0
+```
+
+`MYCONTEXT_IMAGE_TAG` 须与 load 的 tag 一致（默认 `0.1.0`）。详见同目录 `README-LOAD.txt`。
 验证（默认绑定回环，须在 Ubuntu 本机或经 SSH 隧道执行）：
 
 ```bash
