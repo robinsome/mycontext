@@ -3,7 +3,7 @@
  * sidecar 经 dws-sidecar 分页拉会话列表。
  * 落盘四件套最小 chat 源（可被 graph/build 识别）+ collect-progress.json。
  */
-import { existsSync, mkdirSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import {
   OPENAPI_CAPABILITY_MATRIX,
@@ -46,6 +46,24 @@ const SIDECAR_MAX_PAGES = 100
 
 function sidecarConfigDir(input: CollectRunInput): string {
   return input.sidecarConfigRoot ?? join(input.dataDir, "vaults", input.vaultId, "dws-home")
+}
+
+/** 仅统计 type=chat 的 scope 行（不含 workspace），用于采集进度文案。 */
+function countChatScopeLines(exportRoot: string): number {
+  const scopesPath = join(exportRoot, "chat", "scopes.jsonl")
+  if (!existsSync(scopesPath)) return 0
+  let n = 0
+  for (const line of readFileSync(scopesPath, "utf8").split("\n")) {
+    const trimmed = line.trim()
+    if (trimmed === "") continue
+    try {
+      const row = JSON.parse(trimmed) as { type?: unknown }
+      if (row.type === "chat") n += 1
+    } catch {
+      // 忽略坏行
+    }
+  }
+  return n
 }
 
 function readNextCursor(json: unknown): number | null {
@@ -113,10 +131,14 @@ async function runSidecarCollect(
     totalWritten += exportResult.written
 
     if (exportResult.hasMore !== true) {
+      const totalScopes = countChatScopeLines(exportRoot)
       return {
         command: key,
         status: "ok",
-        detail: `sidecar scopes=${totalWritten}`,
+        detail:
+          totalWritten === 0 && totalScopes > 0
+            ? `sidecar new=0 total_chat_scopes=${totalScopes} (deduped)`
+            : `sidecar new=${totalWritten} total_chat_scopes=${totalScopes}`,
       }
     }
 

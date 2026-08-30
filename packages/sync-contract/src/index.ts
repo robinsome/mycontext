@@ -27,12 +27,14 @@ export {
   syncStatusQuerySchema,
   syncStatusResponseSchema,
   syncStatusSourceSchema,
+  syncTokenGetResponseSchema,
   syncTokenRotateResponseSchema,
   type SyncStatusErrorCode,
   type SyncStatusQuery,
   type SyncStatusResponse,
   type SyncStatusSource,
   type SyncTokenErrorCode,
+  type SyncTokenGetResponse,
   type SyncTokenRotateResponse,
 } from "./sync-status.js"
 export {

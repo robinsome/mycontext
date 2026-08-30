@@ -37,6 +37,8 @@ services:
     volumes:
       - mycontext-data:/data
       - /var/run/docker.sock:/var/run/docker.sock
+      # 容器内需 docker CLI 才能经 sock spawn sidecar（默认宿主机 /usr/bin/docker；旧 snap 可改 MYCONTEXT_DOCKER_BIN）
+      - ${MYCONTEXT_DOCKER_BIN:-/usr/bin/docker}:/usr/local/bin/docker:ro
       # 与 MYCONTEXT_HOST_DATA_DIR 同路径 bind，使容器内 docker CLI 能打开 --env-file 宿主机路径
       - ${MYCONTEXT_HOST_DATA_DIR}:${MYCONTEXT_HOST_DATA_DIR}
     restart: unless-stopped

@@ -1,7 +1,8 @@
 /**
  * GET /api/v1/sync/token —— 回显当前 sync token（需 OAuth 或 Bearer）。
  *
- * env 锁定时不回显明文（部署侧持有）；file-backed 供浏览器登录后自动写入 sessionStorage。
+ * 单租户运营台：登录用户下载客户端脚本需要明文 token。
+ * env 锁定时仍回显（`envLocked: true`），但不允许 rotate。
  */
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { SYNC_TOKEN_ERROR } from "@mycontext/sync-contract"
@@ -21,20 +22,11 @@ export function handleSyncTokenGet(
     return
   }
 
-  if (tokenStore.isEnvLocked()) {
-    jsonResponse(response, 409, {
-      error: SYNC_TOKEN_ERROR.ENV_LOCKED,
-      message: "MYCONTEXT_SYNC_TOKEN 由部署环境锁定；请在部署配置中读取，浏览器不能回显。",
-      envLocked: true,
-    })
-    return
-  }
-
   const token = tokenStore.get()
   jsonResponse(response, 200, {
     ok: true,
     token,
     prefix: maskSyncTokenPrefix(token),
-    envLocked: false,
+    envLocked: tokenStore.isEnvLocked(),
   })
 }

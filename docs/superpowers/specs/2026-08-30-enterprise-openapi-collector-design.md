@@ -1,10 +1,12 @@
 # 单企业开放平台采集（取代个人 dws）
 
-**状态：** 设计已确认（2026-08-30）  
-**选择：** C1 单企业自建应用 + D3 对齐只读能力面 + E2 浏览器 OAuth + 方案 1（Ubuntu 企业应用采集器）
+**状态：** 设计已确认（2026-08-30）；**会话等 MCP 能力见补丁** [2026-08-30-per-user-dws-sidecar-b1.md](./2026-08-30-per-user-dws-sidecar-b1.md)（B1：服务端 per-user dws sidecar + 注入网页 OAuth 用户 token）
 
-**取代关系：** 正式主路径不再依赖本机个人 `dws` / `scripts/sync` push。  
-`docs/design/web-service-ubuntu-dws-push.md` 中的「本机 dws 推送」降为过渡/废弃说明；其 Web Service / vault / 四件套 / 建图骨架**复用**。
+**选择：** C1 单企业自建应用 + D3 对齐只读能力面 + E2 浏览器 OAuth + 方案 1（Ubuntu 企业应用采集器）+ **B1 sidecar 补齐无 OpenAPI 的只读 dws 能力**
+
+**取代关系：** 正式主路径不再依赖**本机**个人 `dws` / `scripts/sync` push。  
+`docs/design/web-service-ubuntu-dws-push.md` 中的「本机 dws 推送」降为过渡/废弃说明；其 Web Service / vault / 四件套 / 建图骨架**复用**。  
+服务端 **允许** 按用户短生命周期 sidecar 跑官方 CLI（见 B1 补丁）；**禁止**共享 dws、禁止拷贝开发者 `~/.dws`。
 
 ---
 
@@ -17,12 +19,12 @@
 - 用**用户授权后的访问令牌**调用开放平台 HTTP，尽量对齐现有个人 `dws` 只读白名单
 - 落盘四件套并触发现有 ingest → kl 建图
 
-本机 **不安装** `dws` / MyContext agent；不在服务器上按用户起 `dws` 进程。
+本机 **不安装** `dws` / MyContext agent。无 OpenAPI 等价的只读能力由 **B1 per-user dws sidecar** 执行（见补丁）；已映射能力仍用用户 token 调开放平台 HTTP。
 
 ## 2. 硬约束
 
 1. `AppKey` / `AppSecret` / 用户 `access_token` / `refresh_token` **不进 git**；日志只打掩码，不打聊天正文与真实 ID 全文。
-2. 采集只走「dws 白名单 ↔ 开放平台」对照表中**已映射**项；无映射 → `unsupported`，禁止换接口试探。
+2. 采集调度：对照表 `mapped` → OpenAPI HTTP；`sidecar`（或等价）→ 该用户 dws 容器白名单命令；其余 `deferred`/`unsupported` 不得假装成功。禁止对未声明 path 试探。
 3. 保密群 / 无权限：服务端拒绝即 `unreadable` 并跳过，禁止换身份/换参数绕过。
 4. 严格遵守用户引导所选范围（时间下界 + 勾选会话）；超范围不采。
 5. 分页必须抽干；禁止「只取第一页却记成功」。
@@ -37,7 +39,9 @@
                                       v
                          每用户 vault（SQLite + exports）
                                       |
-              [企业应用采集器] --用户 token--> 开放平台 HTTP（消息/听记/文档…）
+              +-- mapped --> 开放平台 HTTP（用户 token）
+              |
+              +-- sidecar --> per-user dws 容器（注入同一用户 token，B1）
                                       |
                                       v
                          现有 ingest → 四件套 → kl 建图（Ubuntu）
@@ -106,10 +110,11 @@
 ## 9. 明确不做（本阶段）
 
 - 多企业 / 应用市场多租户
-- 服务器上跑个人 `dws` 或拷贝 `~/.dws`
+- **共享**一个 dws 给多用户，或拷贝开发者本机 `~/.dws` 进镜像/仓库
 - 钉内免登（E1）
 - 发送消息、改群、PII 花名册类接口
 - 一次删光 Electron 开发态
+- （B1 spike **已通过** 2026-08-30）批量落地 sidecar 编排 —— 见补丁与实现计划
 
 ## 10. 文档可得性说明
 

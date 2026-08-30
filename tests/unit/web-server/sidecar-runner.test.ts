@@ -73,23 +73,48 @@ describe("resolveHostPath", () => {
   })
 })
 
-describe("SidecarRunner (fake)", () => {
-  it("parses success json from fake runner", async () => {
-    const runner: SidecarRunner = async () => ({
+describe("parseLastJsonValue", () => {
+  it("picks the last object when login json precedes pretty-printed payload", async () => {
+    const { parseLastJsonValue } = await import(
+      "../../../apps/web-server/src/collector/sidecar-runner.js"
+    )
+    const stdout = [
+      '{"success":true,"message":"登录成功","token_valid":true}',
+      "{",
+      '  "success": true,',
+      '  "result": {',
+      '    "conversations": [{"id":"cidFAKE0001=="}],',
+      '    "hasMore": false',
+      "  }",
+      "}",
+    ].join("\n")
+    const json = parseLastJsonValue(stdout) as {
+      success: boolean
+      result: { conversations: unknown[]; hasMore: boolean }
+    }
+    expect(json.success).toBe(true)
+    expect(json.result.conversations).toHaveLength(1)
+    expect(json.result.hasMore).toBe(false)
+  })
+})
+
+describe("summarizeSidecarResult", () => {
+  it("does not embed conversation titles or open ids", async () => {
+    const { summarizeSidecarResult } = await import(
+      "../../../apps/web-server/src/collector/sidecar-runner.js"
+    )
+    const detail = summarizeSidecarResult({
       exitCode: 0,
+      accessToken: "uat-fake",
+      stdout: '{"success":true,"result":{"conversations":[{"title":"SECRET_GROUP","openConversationId":"cidREAL"}],"hasMore":false}}',
+      stderr: "",
       json: {
         success: true,
-        result: { conversations: [{ id: "cidFAKE0001==" }], hasMore: false },
+        result: { conversations: [{ title: "SECRET_GROUP" }], hasMore: false },
       },
-      detail: "ok",
     })
-    const r = await runner({
-      vaultId: "vault_fake",
-      accessToken: "uat-fake",
-      dwsArgs: ["chat", "list-all-conversations", "--limit", "1", "-f", "json"],
-      configDir: "/tmp/fake-dws-home",
-    })
-    expect(r.exitCode).toBe(0)
-    expect((r.json as { success: boolean }).success).toBe(true)
+    expect(detail).toContain("conversations=1")
+    expect(detail).not.toContain("SECRET_GROUP")
+    expect(detail).not.toContain("cidREAL")
   })
 })

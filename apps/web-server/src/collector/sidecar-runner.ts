@@ -72,22 +72,33 @@ function shellSingleQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`
 }
 
-/** 从 stdout 末段解析 dws JSON 输出（`-f json`）。 */
-function parseDwsJson(stdout: string): unknown | null {
-  const trimmed = stdout.trim()
-  if (trimmed === "") return null
-  const lines = trimmed.split("\n")
-  for (let i = lines.length - 1; i >= 0; i -= 1) {
-    const line = lines[i]?.trim() ?? ""
-    if (line === "" || line[0] !== "{") continue
-    try {
-      return JSON.parse(line) as unknown
-    } catch {
-      // 继续向前找合法 JSON 行
+/** 从 stdout 解析最后一个完整 JSON 对象（兼容 login + 业务命令混打、pretty-print）。 */
+export function parseLastJsonValue(stdout: string): unknown | null {
+  const text = stdout.trim()
+  if (text === "") return null
+
+  // 自右向左找配对的顶层 {...}（dws -f json；字符串内花括号极少，MVP 够用）
+  let depth = 0
+  let end = -1
+  for (let i = text.length - 1; i >= 0; i -= 1) {
+    const ch = text[i]
+    if (ch === "}") {
+      if (depth === 0) end = i
+      depth += 1
+    } else if (ch === "{") {
+      depth -= 1
+      if (depth === 0 && end >= 0) {
+        try {
+          return JSON.parse(text.slice(i, end + 1)) as unknown
+        } catch {
+          end = -1
+        }
+      }
     }
   }
+
   try {
-    return JSON.parse(trimmed) as unknown
+    return JSON.parse(text) as unknown
   } catch {
     return null
   }
@@ -99,13 +110,44 @@ function isDwsFailure(json: unknown | null): boolean {
   return false
 }
 
+/** 摘要里不得出现 token / 会话正文；只报长度与 success。 */
+export function summarizeSidecarResult(input: {
+  stdout: string
+  stderr: string
+  accessToken: string
+  json: unknown | null
+  exitCode: number
+}): string {
+  const parts: string[] = [`exit=${input.exitCode}`, `stdout_len=${input.stdout.trim().length}`]
+  const err = input.stderr.trim()
+  if (err !== "") {
+    parts.push(`stderr_len=${err.length}`)
+    const head = redactSidecarDetail(err.slice(0, 240), input.accessToken)
+    if (head !== "") parts.push(`stderr_head=${head}`)
+  }
+  if (input.json !== null && typeof input.json === "object") {
+    const o = input.json as Record<string, unknown>
+    if ("success" in o) parts.push(`success=${String(o["success"])}`)
+    const result = o["result"]
+    if (result !== null && typeof result === "object") {
+      const r = result as Record<string, unknown>
+      if (Array.isArray(r["conversations"])) {
+        parts.push(`conversations=${r["conversations"].length}`)
+      }
+      if ("hasMore" in r) parts.push(`hasMore=${String(r["hasMore"])}`)
+    }
+  } else {
+    parts.push("json=null")
+  }
+  return parts.join(" ")
+}
+
 /** 摘要里不得出现 token 原文（含 env 泄漏与 CLI 回显）。 */
 function redactSidecarDetail(text: string, accessToken: string): string {
   let out = text
   if (accessToken.length > 0) {
     out = out.split(accessToken).join("[REDACTED_TOKEN]")
   }
-  // uat-/Bearer 等常见 token 形态
   out = out.replace(/\b(uat-[A-Za-z0-9_-]{8,})\b/g, "[REDACTED_TOKEN]")
   out = out.replace(/\bBearer\s+[A-Za-z0-9._-]{8,}\b/gi, "Bearer [REDACTED_TOKEN]")
   const maxLen = 2000
@@ -113,13 +155,6 @@ function redactSidecarDetail(text: string, accessToken: string): string {
     return `${out.slice(0, maxLen)}…`
   }
   return out
-}
-
-function summarizeOutput(stdout: string, stderr: string, accessToken: string): string {
-  const parts: string[] = []
-  if (stderr.trim() !== "") parts.push(`stderr: ${stderr.trim()}`)
-  if (stdout.trim() !== "") parts.push(`stdout: ${stdout.trim()}`)
-  return redactSidecarDetail(parts.join("\n"), accessToken)
 }
 
 async function runProcess(
@@ -208,8 +243,9 @@ export function createDockerSidecarRunner(options: {
       mkdirSync(req.configDir, { recursive: true, mode: 0o700 })
 
       const businessCmd = ["dws", ...req.dwsArgs].map(shellSingleQuote).join(" ")
+      // login 的 JSON 不得混进业务 stdout（否则 pretty-print 多段 JSON 无法按行解析）
       const script =
-        `dws auth login --token "$DWS_ACCESS_TOKEN" -y && ${businessCmd}`
+        `dws auth login --token "$DWS_ACCESS_TOKEN" -y >/dev/null && ${businessCmd}`
 
       const hostConfigDir = resolveHostPath(req.configDir)
       envContainerPath = sidecarEnvContainerPath(req.configDir, req.vaultId)
@@ -224,13 +260,19 @@ export function createDockerSidecarRunner(options: {
       })
 
       const { exitCode, stdout, stderr } = await runProcess(dockerBin, dockerArgs)
-      const detail = summarizeOutput(stdout, stderr, req.accessToken)
+      const json = exitCode === 0 ? parseLastJsonValue(stdout) : null
+      const detail = summarizeSidecarResult({
+        stdout,
+        stderr,
+        accessToken: req.accessToken,
+        json,
+        exitCode,
+      })
 
       if (exitCode !== 0) {
         return { exitCode, json: null, detail }
       }
 
-      const json = parseDwsJson(stdout)
       if (isDwsFailure(json)) {
         return { exitCode, json: null, detail }
       }

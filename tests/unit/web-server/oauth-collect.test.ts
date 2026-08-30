@@ -57,6 +57,21 @@ describe("oauth + collect MVP", () => {
         openId: "openFAKE0001",
         expireIn: 7200,
       }),
+      // 避免单测打真网：mapped 行由注入处理
+      callMapped: async (row, ctx) => {
+        const command = row.dwsCommand.join(" ")
+        if (command === "contact user get-self") {
+          const dir = join(ctx.exportRoot, "identity")
+          const { mkdirSync, writeFileSync } = await import("node:fs")
+          mkdirSync(dir, { recursive: true })
+          writeFileSync(
+            join(dir, "me.json"),
+            `${JSON.stringify({ openId: "openFAKE0001", nick: "Alice" }, null, 2)}\n`,
+          )
+          return { command, status: "ok", detail: "wrote identity/me.json" }
+        }
+        return { command, status: "error", detail: "unexpected mapped in test" }
+      },
       graphBuildRunner: {
         build: async ({ exportDir }) => {
           builds.push(exportDir)
@@ -107,7 +122,9 @@ describe("oauth + collect MVP", () => {
         results: { status: string }[]
       }
       expect(collectBody.ok).toBe(true)
+      expect(collectBody.results.some((r) => r.status === "ok")).toBe(true)
       expect(collectBody.results.some((r) => r.status === "deferred")).toBe(true)
+      expect(existsSync(join(collectBody.exportRoot, "identity", "me.json"))).toBe(true)
       expect(existsSync(join(collectBody.exportRoot, "collect-progress.json"))).toBe(true)
       expect(hasIngestibleExport(collectBody.exportRoot)).toBe(true)
 
@@ -154,6 +171,68 @@ describe("oauth + collect MVP", () => {
       expect(res.status).toBe(401)
     } finally {
       await server.stop()
+    }
+  })
+
+  it("defaultExchangeUserToken：token 响应无 openId 时补拉 /users/me", async () => {
+    const { defaultExchangeUserToken, buildAuthorizeUrl } = await import(
+      "../../../apps/web-server/src/oauth/dingtalk-oauth.js"
+    )
+    const auth = buildAuthorizeUrl(
+      {
+        clientId: "ding-fake",
+        clientSecret: "sec",
+        corpId: "dingFAKECORP",
+        redirectUri: "http://127.0.0.1/cb",
+      },
+      "state1",
+    )
+    expect(auth).toContain("corpId=dingFAKECORP")
+
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes("/oauth2/userAccessToken")) {
+        expect(JSON.parse(String(init?.body))).toMatchObject({
+          grantType: "authorization_code",
+          code: "codeFAKE",
+        })
+        return new Response(
+          JSON.stringify({
+            accessToken: "uat-fake",
+            refreshToken: "urt-fake",
+            expireIn: 7200,
+            corpId: "dingFAKECORP",
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        )
+      }
+      if (url.includes("/contact/users/me")) {
+        expect((init?.headers as Record<string, string>)["x-acs-dingtalk-access-token"]).toBe(
+          "uat-fake",
+        )
+        return new Response(JSON.stringify({ openId: "openFAKE0001", unionId: "unionFAKE0001" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        })
+      }
+      throw new Error(`unexpected fetch ${url}`)
+    }) as typeof fetch
+    try {
+      const tokens = await defaultExchangeUserToken({
+        code: "codeFAKE",
+        config: {
+          clientId: "ding-fake",
+          clientSecret: "sec",
+          corpId: "dingFAKECORP",
+          redirectUri: "http://127.0.0.1/cb",
+        },
+      })
+      expect(tokens.accessToken).toBe("uat-fake")
+      expect(tokens.openId).toBe("openFAKE0001")
+      expect(tokens.unionId).toBe("unionFAKE0001")
+    } finally {
+      globalThis.fetch = originalFetch
     }
   })
 })

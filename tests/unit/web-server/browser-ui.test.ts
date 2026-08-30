@@ -151,6 +151,7 @@ describe("GET / 静态 UI", () => {
     expect(html).toContain("本机不必装 dws")
     expect(html).toContain("调试/应急")
     expect(html).toContain("客户端采集")
+    expect(html).toContain("下载采集脚本 (.ts)")
     expect(html).toContain("/client/README.txt")
     const serverCollectIdx = html.indexOf("采集（服务器）")
     const clientCollectIdx = html.indexOf("客户端采集")
@@ -158,24 +159,22 @@ describe("GET / 静态 UI", () => {
     expect(clientCollectIdx).toBeGreaterThan(serverCollectIdx)
   })
 
-  it("GET /client/README.txt 与脚本模板可下载", async () => {
+  it("GET /client/README.txt 与 TS 脚本模板可下载", async () => {
     const { base } = await startServer(tempDataDir())
     const readme = await fetch(`${base}/client/README.txt`)
     expect(readme.status).toBe(200)
     const readmeText = await readme.text()
     expect(readmeText).toContain("路径 A")
+    expect(readmeText).toContain("npx --yes tsx")
     expect(readmeText).toContain("dws auth login")
 
-    const sh = await fetch(`${base}/client/collect-from-dws.sh.template`)
-    expect(sh.status).toBe(200)
-    const shText = await sh.text()
-    expect(shText).toContain("__SYNC_URL__")
-    expect(shText).toContain("__SYNC_TOKEN__")
-    expect(shText).toContain("list-all-conversations")
-
-    const ps1 = await fetch(`${base}/client/collect-from-dws.ps1.template`)
-    expect(ps1.status).toBe(200)
-    expect(await ps1.text()).toContain("__VAULT_ID__")
+    const ts = await fetch(`${base}/client/collect-from-dws.ts.template`)
+    expect(ts.status).toBe(200)
+    const tsText = await ts.text()
+    expect(tsText).toContain("__SYNC_URL__")
+    expect(tsText).toContain("__SYNC_TOKEN__")
+    expect(tsText).toContain("list-all-conversations")
+    expect(tsText).toContain("npx --yes tsx")
   })
 
   it("GET /app.js → 200 且为合法 JS（无 TS 注解）", async () => {
@@ -303,15 +302,17 @@ describe("GET /api/v1/sync/token", () => {
     expect(response.status).toBe(401)
   })
 
-  it("env 锁定 → 409，不回显 token", async () => {
+  it("env 锁定 + Bearer → 200 回显当前 token（供客户端脚本下载）", async () => {
     const { base } = await startServer(tempDataDir())
     const response = await fetch(`${base}/api/v1/sync/token`, {
       headers: { authorization: `Bearer ${TOKEN}` },
     })
-    expect(response.status).toBe(409)
+    expect(response.status).toBe(200)
     const body = (await response.json()) as Record<string, unknown>
-    expect(body["error"]).toBe("env_locked")
-    expect(body["token"]).toBeUndefined()
+    expect(body["ok"]).toBe(true)
+    expect(body["token"]).toBe(TOKEN)
+    expect(body["envLocked"]).toBe(true)
+    expect(typeof body["prefix"]).toBe("string")
   })
 
   it("OAuth session + file-backed → 200 回显当前 token", async () => {

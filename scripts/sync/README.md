@@ -3,9 +3,39 @@
 > **正式主路径**已改为 Ubuntu 上企业内部应用 + 浏览器 OAuth 采集。  
 > 规格：`docs/superpowers/specs/2026-08-30-enterprise-openapi-collector-design.md`  
 > 本目录脚本仅作过渡：Win/mac 仍可用官方 `dws` 把四件套 **推送** 到服务器。
+>
+> **推荐入口（TS）：** `npx tsx scripts/sync/push-dws-export-entry.ts`  
+> （支持 `--from-dws` 本机导出；bash/ps1 仅保留打包推送，不再扩展。）
 
 Win / mac 用户若仍走过渡路径：**不安装 MyContext agent**，只装官方渠道 CLI（`dws`），用本目录脚本把
 `exports/dws` 四件套 **推送** 到 Ubuntu 上的 Web Service。
+
+## 推荐：npx tsx 推送
+
+在仓库根目录（需已 `pnpm install`，且本机有 Node ≥ 22）：
+
+```bash
+export MYCONTEXT_SYNC_URL="http://127.0.0.1:8787/api/v1/channel-sync"
+export MYCONTEXT_SYNC_TOKEN="your-sync-token"
+
+# 假数据烟测（无需 dws）
+npx tsx scripts/sync/push-dws-export-entry.ts --fixture
+
+# 本机 dws → 会话列表 + 近 24h 消息 → 推送到 OAuth 同名 vault
+# vaultId 取浏览器登录后 GET /api/v1/auth/me 的 vaultId
+dws auth login   # 若尚未登录
+export MYCONTEXT_VAULT_ID="u…"   # 与 /auth/me 一致；勿把真实 ID 写进 git
+npx tsx scripts/sync/push-dws-export-entry.ts --from-dws --vault-id "$MYCONTEXT_VAULT_ID"
+# 只导会话、不拉消息：加 --hours 0
+
+# 已有四件套目录时
+npx tsx scripts/sync/push-dws-export-entry.ts \
+  --export-dir "$HOME/Library/Application Support/MyContext/vaults/<vaultId>/exports/dws" \
+  --vault-id "<vaultId>"
+```
+
+`--from-dws` 会走仓库内已有的会话三路合并（`list-all-conversations` + 群分页）与
+`chat message list-all` 分页抽干；保密群记为不可读并跳过。服务器**不**安装 dws。
 
 ## 安装 dws（macOS / Windows）
 
@@ -65,9 +95,17 @@ dws contact user get-self
 | 变量 | 必填 | 说明 |
 | --- | --- | --- |
 | `MYCONTEXT_SYNC_URL` | 是 | 同步端点，例 `http://127.0.0.1:8787/api/v1/channel-sync` |
-| `MYCONTEXT_SYNC_TOKEN` | 是 | 与服务端 `MYCONTEXT_SYNC_TOKEN` 一致的 Bearer |
-| `MYCONTEXT_EXPORT_DIR` | live | 四件套根目录（含 `chat/`、`minutes/` 子目录） |
-| `MYCONTEXT_VAULT_ID` | live | 服务端 vault 目录名，例 `vault-fake-001` |
+| `MYCONTEXT_SYNC_TOKEN` | 可选* | 与服务端一致的 Bearer；**推荐**钉钉扫码后由浏览器自动领取（见下方） |
+| `MYCONTEXT_EXPORT_DIR` | export-dir | 四件套根目录（含 `chat/`、`minutes/` 子目录） |
+| `MYCONTEXT_VAULT_ID` | from-dws / export-dir | 服务端 vault 目录名（与 `/auth/me` 对齐） |
+| `MYCONTEXT_HOURS` | from-dws | 消息回看小时，默认 24；`0` = 只导会话 |
+| `MYCONTEXT_DWS_BIN` | from-dws | 覆盖 dws 可执行文件路径 |
+
+\* 服务端 **未** 设置 `MYCONTEXT_SYNC_TOKEN`（file-backed）时：浏览器扫码登录后会
+`GET /api/v1/sync/token` 自动写入页面 sessionStorage。CLI 若仍要推送，可从设置页
+「生成新 Sync Token」复制，或读服务器数据卷 `sync-token` 文件。部署用 env 锁定时
+浏览器 **不能** 回显，须在部署配置中读取。
+
 | `MYCONTEXT_SYNC_FIXTURE` | 否 | 设为 `1` 时使用合成假数据 |
 
 临时文件写在 `/tmp`（mac/Linux）或 `%TEMP%`（Windows），**不要**把导出物提交进 git。
@@ -80,10 +118,11 @@ dws contact user get-self
 export MYCONTEXT_SYNC_URL="http://127.0.0.1:8787/api/v1/channel-sync"
 export MYCONTEXT_SYNC_TOKEN="your-sync-token"
 
-# mac / Linux
-./scripts/sync/push-dws-export.sh --fixture
+# 推荐
+npx tsx scripts/sync/push-dws-export-entry.ts --fixture
 
-# Windows PowerShell
+# 兼容：bash / PowerShell
+./scripts/sync/push-dws-export.sh --fixture
 .\scripts\sync\push-dws-export.ps1 -Fixture
 ```
 
@@ -149,6 +188,6 @@ $env:MYCONTEXT_VAULT_ID = "<vaultId>"
 
 ## 安全说明
 
-- 脚本**不会**在本机重跑完整 chat→四件套流水线；live 模式只打包已有 export 并 POST。
-- 只调用白名单只读命令做探活，不扩大 dws 读取面。
+- 脚本**默认不会**在本机重跑完整 chat→四件套流水线；`--export-dir` 只打包已有 export 并 POST。
+- `--from-dws` 例外：只调白名单只读命令导出再推送，不扩大 dws 读取面。
 - 日志与示例均使用假 ID；勿在 issue/PR 中粘贴真实聊天或 openId。

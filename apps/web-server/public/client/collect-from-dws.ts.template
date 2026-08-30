@@ -1,0 +1,326 @@
+#!/usr/bin/env -S npx --yes tsx
+/**
+ * MyContext 客户端采集（调试/应急）：本机 dws → POST /api/v1/channel-sync
+ * 由 Web 页按登录态填入 URL/Token/Vault 后下载。勿把含 token 的副本提交进 git。
+ *
+ * 运行（需本机已装 Node + 全局 dws@1.0.60 并已 dws auth login）：
+ *   npx --yes tsx ./mycontext-collect-from-dws.ts
+ *   npx --yes tsx ./mycontext-collect-from-dws.ts --hours 0
+ */
+import { spawnSync } from "node:child_process"
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+
+const SYNC_URL = "__SYNC_URL__"
+const SYNC_TOKEN = "__SYNC_TOKEN__"
+const VAULT_ID = "__VAULT_ID__"
+let hours = Number("__HOURS__")
+
+function die(message: string, code = 1): never {
+  console.error(message)
+  process.exit(code)
+}
+
+function parseArgs(argv: string[]): void {
+  for (let i = 0; i < argv.length; i += 1) {
+    if (argv[i] === "--hours" && argv[i + 1] !== undefined) {
+      hours = Number(argv[i + 1])
+      i += 1
+    }
+  }
+  if (!Number.isFinite(hours) || hours < 0) {
+    die("错误: --hours 须为非负数字")
+  }
+}
+
+const IS_WIN = process.platform === "win32"
+
+/** Windows 上 npm 全局命令是 .cmd，无 shell 时 spawn 找不到 dws。 */
+function spawnDws(args: string[]) {
+  return spawnSync("dws", args, {
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+    shell: IS_WIN,
+    windowsHide: true,
+  })
+}
+
+function needDws(): void {
+  const probe = spawnDws(["--version"])
+  if (probe.error || probe.status !== 0) {
+    die(
+      "未找到 dws。请安装并登录：\n  npm install -g dingtalk-workspace-cli@1.0.60\n  dws auth login\n" +
+        (IS_WIN
+          ? "（若终端里 dws 可用而本脚本仍报错：确认用的是同一用户安装的全局 npm，并重新下载本 .ts）"
+          : ""),
+    )
+  }
+}
+
+function runDws(args: string[], opts?: { allowFail?: boolean }): string {
+  const r = spawnDws(args)
+  if (r.error) die(`执行 dws 失败: ${r.error.message}`)
+  if (r.status !== 0) {
+    if (opts?.allowFail) return r.stdout || "{}"
+    die(`dws ${args.join(" ")} 失败 (exit ${r.status})\n${r.stderr || r.stdout}`)
+  }
+  return r.stdout
+}
+
+function unwrap(doc: unknown): unknown {
+  if (doc !== null && typeof doc === "object" && "result" in doc) {
+    const result = (doc as { result?: unknown }).result
+    if (result !== null && (typeof result === "object" || Array.isArray(result))) {
+      return result
+    }
+  }
+  return doc
+}
+
+function loadJson(path: string): unknown {
+  const raw = readFileSync(path, "utf8").trim()
+  if (raw === "") return {}
+  return unwrap(JSON.parse(raw))
+}
+
+function shanghaiWindow(hoursBack: number): { start: string; end: string } {
+  const fmt = (d: Date) => {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Shanghai",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    }).formatToParts(d)
+    const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "00"
+    return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}:${get("second")}`
+  }
+  const end = new Date()
+  const start = new Date(end.getTime() - hoursBack * 3600_000)
+  return { start: fmt(start), end: fmt(end) }
+}
+
+type ScopeRow = {
+  id: string
+  type: string
+  parent_id: string | null
+  data: Record<string, unknown>
+}
+
+type RecordRow = {
+  id: string
+  scope_id: string
+  type: string
+  data: Record<string, unknown>
+}
+
+function buildPayload(
+  conv: unknown,
+  groups: unknown,
+  msg: unknown,
+  vaultId: string,
+): { payload: unknown; chatCount: number; recordCount: number } {
+  const byId = new Map<string, ScopeRow>()
+
+  const put = (raw: Record<string, unknown>, kindDefault: string) => {
+    const cid = raw["openConversationId"]
+    if (typeof cid !== "string" || cid === "") return
+    if (byId.has(cid)) return
+    const single = raw["groupType"] === "SINGLE_CHAT" || raw["singleChat"] === true
+    byId.set(cid, {
+      id: `chat:${cid.replaceAll("/", "_")}`,
+      type: "chat",
+      parent_id: "workspace:ali-ding",
+      data: {
+        title: raw["title"] ?? raw["name"],
+        chat_kind: single ? "direct" : kindDefault,
+        openConversationId: cid,
+        memberCount: raw["memberCount"],
+      },
+    })
+  }
+
+  const convObj = conv !== null && typeof conv === "object" ? (conv as Record<string, unknown>) : {}
+  const groupObj =
+    groups !== null && typeof groups === "object" ? (groups as Record<string, unknown>) : {}
+  for (const raw of (convObj["conversations"] as unknown[]) ?? []) {
+    if (raw !== null && typeof raw === "object") put(raw as Record<string, unknown>, "group")
+  }
+  for (const raw of (groupObj["groups"] as unknown[]) ?? []) {
+    if (raw !== null && typeof raw === "object") put(raw as Record<string, unknown>, "group")
+  }
+
+  const scopes: ScopeRow[] = [
+    {
+      id: "workspace:ali-ding",
+      type: "workspace",
+      parent_id: null,
+      data: { title: "钉钉工作区" },
+    },
+    ...byId.values(),
+  ]
+
+  const records: RecordRow[] = []
+  const walk = (node: unknown): void => {
+    if (Array.isArray(node)) {
+      for (const x of node) walk(x)
+      return
+    }
+    if (node === null || typeof node !== "object") return
+    const obj = node as Record<string, unknown>
+    const msgs = obj["messages"]
+    if (Array.isArray(msgs)) {
+      const cid = obj["openConversationId"]
+      for (const m of msgs) {
+        if (m === null || typeof m !== "object") continue
+        const row = m as Record<string, unknown>
+        const mid = row["openMessageId"]
+        const ocid = row["openConversationId"] ?? cid
+        if (typeof mid !== "string" || typeof ocid !== "string") continue
+        const scopeId = `chat:${ocid.replaceAll("/", "_")}`
+        records.push({
+          id: `${scopeId}:${mid}`,
+          scope_id: scopeId,
+          type: "message",
+          data: {
+            openMessageId: mid,
+            openConversationId: ocid,
+            content: row["content"] ?? "",
+            createTime: row["createTime"],
+            sender: row["sender"] ?? row["senderName"] ?? "unknown",
+            senderOpenDingTalkId: row["senderOpenDingTalkId"] ?? row["openDingTalkId"],
+          },
+        })
+      }
+    }
+    for (const v of Object.values(obj)) {
+      if (v !== null && typeof v === "object") walk(v)
+    }
+  }
+  if (msg !== null && typeof msg === "object") walk(msg)
+
+  const exportedAt = Date.now()
+  const chatCount = Math.max(0, scopes.length - 1)
+  const manifest = {
+    source: "mycontext",
+    dataset: "chat",
+    scope_types: ["workspace", "chat"],
+    record_types: ["message"],
+    resource_kinds: [] as string[],
+    counts: { scopes: chatCount, records: records.length, resources: 0 },
+    exported_at: exportedAt,
+    mycontext_bridge: { client_script: "collect-from-dws.ts", msg: "first page only" },
+  }
+
+  const lines = (objs: unknown[]) =>
+    objs.length === 0 ? "" : objs.map((o) => `${JSON.stringify(o)}\n`).join("")
+
+  return {
+    chatCount,
+    recordCount: records.length,
+    payload: {
+      manifest: {
+        vaultId,
+        channelId: "dingtalk",
+        exportedAt,
+        sources: ["chat"],
+      },
+      files: {
+        "chat/manifest.json": `${JSON.stringify(manifest, null, 2)}\n`,
+        "chat/scopes.jsonl": lines(scopes),
+        "chat/records.jsonl": lines(records),
+        "chat/resources.jsonl": "",
+      },
+    },
+  }
+}
+
+async function main(): Promise<void> {
+  parseArgs(process.argv.slice(2))
+
+  if (!SYNC_URL || !SYNC_TOKEN || !VAULT_ID || SYNC_TOKEN.includes("REPLACE_WITH")) {
+    die("错误: Sync URL / Token / Vault ID 无效。请在 Web 页登录后再下载本脚本。")
+  }
+
+  needDws()
+
+  console.error("探活: dws contact user get-self …")
+  runDws(["contact", "user", "get-self", "-f", "json"])
+
+  const work = mkdtempSync(join(tmpdir(), "mycontext-client-"))
+  try {
+    console.error("拉取会话 list-all-conversations（上限约 100，可能不全）…")
+    writeFileSync(
+      join(work, "conv.json"),
+      runDws(["chat", "list-all-conversations", "--limit", "100", "-f", "json"]),
+    )
+
+    console.error("拉取群 list-all 首页…")
+    writeFileSync(
+      join(work, "groups.json"),
+      runDws(["chat", "group", "list-all", "--limit", "100", "-f", "json"]),
+    )
+
+    if (hours !== 0) {
+      console.error(
+        `拉取近 ${hours}h 消息 list-all 首页（完整抽干请用仓库 tsx --from-dws）…`,
+      )
+      const { start, end } = shanghaiWindow(hours)
+      writeFileSync(
+        join(work, "msg.json"),
+        runDws(
+          [
+            "chat",
+            "message",
+            "list-all",
+            "--start",
+            start,
+            "--end",
+            end,
+            "--cursor",
+            "0",
+            "--limit",
+            "100",
+            "-f",
+            "json",
+          ],
+          { allowFail: true },
+        ),
+      )
+    } else {
+      console.error("hours=0：只导会话，跳过消息")
+      writeFileSync(join(work, "msg.json"), "{}")
+    }
+
+    const conv = loadJson(join(work, "conv.json"))
+    const groups = loadJson(join(work, "groups.json"))
+    const msg = loadJson(join(work, "msg.json"))
+    const { payload, chatCount, recordCount } = buildPayload(conv, groups, msg, VAULT_ID)
+    console.error(`组装完成: 会话 ${chatCount}，消息 ${recordCount}`)
+
+    console.error(`POST ${SYNC_URL} …`)
+    const response = await fetch(SYNC_URL, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${SYNC_TOKEN}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    })
+    const bodyText = await response.text()
+    console.error(`HTTP ${response.status}`)
+    console.error(bodyText)
+    if (!response.ok) die("同步失败")
+    console.error("同步成功。请回 Web 页查看「同步状态」。")
+  } finally {
+    rmSync(work, { recursive: true, force: true })
+  }
+}
+
+main().catch((error: unknown) => {
+  die(error instanceof Error ? error.message : String(error))
+})

@@ -2,6 +2,9 @@
  * 钉钉企业内部应用：浏览器 OAuth（用户 token）。
  *
  * 不得用应用级 accessToken 读个人聊天；本模块只换用户 userAccessToken。
+ *
+ * 官方 `POST /v1.0/oauth2/userAccessToken` 只返回 accessToken/refreshToken/expireIn/corpId，
+ * **不含 openId**；身份标识须再调 `GET /v1.0/contact/users/me`（需 Contact.User.Read）。
  */
 import { createHash, randomBytes } from "node:crypto"
 import { isSafePathSegment } from "@mycontext/sync-contract"
@@ -41,6 +44,8 @@ export function buildAuthorizeUrl(config: DingTalkOAuthConfig, state: string): s
   url.searchParams.set("scope", "openid corpid")
   url.searchParams.set("prompt", "consent")
   url.searchParams.set("state", state)
+  // 企业内部应用建议带 corpId，减少选企业页
+  url.searchParams.set("corpId", config.corpId)
   return url.toString()
 }
 
@@ -48,7 +53,37 @@ export function newOAuthState(): string {
   return randomBytes(16).toString("hex")
 }
 
-/** 生产默认：调开放平台换用户 token。测试注入 mock。 */
+async function fetchUserProfile(accessToken: string): Promise<{ openId: string; unionId?: string }> {
+  const response = await fetch("https://api.dingtalk.com/v1.0/contact/users/me", {
+    method: "GET",
+    headers: {
+      "x-acs-dingtalk-access-token": accessToken,
+    },
+  })
+  const text = await response.text()
+  if (!response.ok) {
+    throw new Error(`users/me HTTP ${response.status}`)
+  }
+  let body: Record<string, unknown>
+  try {
+    body = JSON.parse(text) as Record<string, unknown>
+  } catch {
+    throw new Error("users/me 响应非 JSON")
+  }
+  const openId = typeof body["openId"] === "string" ? body["openId"] : ""
+  const unionId = typeof body["unionId"] === "string" ? body["unionId"] : ""
+  // openId 优先；个别租户可能只有 unionId，用其作稳定 vault 键
+  const stableId = openId !== "" ? openId : unionId
+  if (stableId === "") {
+    throw new Error("users/me 缺少 openId/unionId")
+  }
+  return {
+    openId: stableId,
+    ...(unionId !== "" ? { unionId } : {}),
+  }
+}
+
+/** 生产默认：换用户 token + 拉 /users/me。测试可注入 mock。 */
 export const defaultExchangeUserToken: ExchangeUserToken = async ({ code, config }) => {
   const response = await fetch("https://api.dingtalk.com/v1.0/oauth2/userAccessToken", {
     method: "POST",
@@ -60,23 +95,30 @@ export const defaultExchangeUserToken: ExchangeUserToken = async ({ code, config
       grantType: "authorization_code",
     }),
   })
+  const text = await response.text()
   if (!response.ok) {
     throw new Error(`token exchange HTTP ${response.status}`)
   }
-  const body = (await response.json()) as Record<string, unknown>
+  let body: Record<string, unknown>
+  try {
+    body = JSON.parse(text) as Record<string, unknown>
+  } catch {
+    throw new Error("token exchange 响应非 JSON")
+  }
   const accessToken = typeof body["accessToken"] === "string" ? body["accessToken"] : ""
   const refreshToken = typeof body["refreshToken"] === "string" ? body["refreshToken"] : ""
-  const openId = typeof body["openId"] === "string" ? body["openId"] : ""
   const expireIn = typeof body["expireIn"] === "number" ? body["expireIn"] : 7200
-  if (accessToken === "" || openId === "") {
-    throw new Error("token exchange 响应缺少 accessToken/openId")
+  if (accessToken === "") {
+    throw new Error("token exchange 响应缺少 accessToken")
   }
+
+  const profile = await fetchUserProfile(accessToken)
   return {
     accessToken,
     refreshToken,
-    openId,
+    openId: profile.openId,
     expireIn,
-    ...(typeof body["unionId"] === "string" ? { unionId: body["unionId"] } : {}),
+    ...(profile.unionId !== undefined ? { unionId: profile.unionId } : {}),
   }
 }
 

@@ -61,7 +61,10 @@ export async function handleAuthCallbackGet(
   let tokens
   try {
     tokens = await deps.exchangeUserToken({ code, config: deps.oauthConfig })
-  } catch {
+  } catch (err) {
+    // 不打印 code/secret；只记失败类型便于排障
+    const reason = err instanceof Error ? err.message : "unknown"
+    console.error("OAuth token exchange failed:", reason)
     jsonResponse(response, 502, { error: AUTH_ERROR.TOKEN_EXCHANGE_FAILED })
     return
   }

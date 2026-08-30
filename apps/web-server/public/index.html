@@ -51,7 +51,7 @@
         <ol class="steps">
           <li>安装 Node LTS → <code>npm install -g dingtalk-workspace-cli@1.0.60</code></li>
           <li>本机执行 <code>dws auth login</code></li>
-          <li>下载说明与脚本 → 在终端运行</li>
+          <li>下载 TypeScript 脚本 → <code>npx --yes tsx ./mycontext-collect-from-dws.ts</code></li>
           <li>回到本页「同步状态」确认已推送</li>
         </ol>
         <label>
@@ -60,10 +60,9 @@
         </label>
         <div class="actions">
           <a class="button secondary" href="/client/README.txt" download="mycontext-client-README.txt">下载说明 README.txt</a>
-          <button type="button" id="dl-sh-btn">下载 macOS/Linux 脚本 (.sh)</button>
-          <button type="button" id="dl-ps1-btn" class="secondary">下载 Windows 脚本 (.ps1)</button>
+          <button type="button" id="dl-ts-btn">下载采集脚本 (.ts)</button>
         </div>
-        <pre id="client-collect-hint" aria-live="polite">登录后即可下载已填好凭证的脚本。</pre>
+        <pre id="client-collect-hint" aria-live="polite">登录后即可下载已填好凭证的 TypeScript 脚本（npx tsx 执行）。</pre>
       </section>
 
       <section class="card" aria-labelledby="settings-heading">

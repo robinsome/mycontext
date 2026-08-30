@@ -1,8 +1,46 @@
-FROM node:22-bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates unzip \
+# MyContext dws sidecar：仅官方 CLI 二进制 + 最小运行时。
+# 基座 node:22.23.0-slim；多阶段只拷 vendor/dws。
+# linux/amd64 实测：docker images Size ≈95.7MB；gzip save ≈91MB（<100MB）。
+#
+# 构建机若需代理：--build-arg HTTP_PROXY=... --build-arg HTTPS_PROXY=...
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG http_proxy
+ARG https_proxy
+ARG NO_PROXY
+ARG no_proxy
+
+FROM node:22.23.0-slim AS fetch
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG http_proxy
+ARG https_proxy
+ARG NO_PROXY
+ARG no_proxy
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates unzip binutils \
   && rm -rf /var/lib/apt/lists/* \
-  && npm install -g dingtalk-workspace-cli@1.0.60
+  && npm install --prefix /opt/dws-prefix dingtalk-workspace-cli@1.0.60 \
+  && test -x /opt/dws-prefix/node_modules/dingtalk-workspace-cli/vendor/dws \
+  && strip --strip-unneeded /opt/dws-prefix/node_modules/dingtalk-workspace-cli/vendor/dws
+
+FROM node:22.23.0-slim
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG http_proxy
+ARG https_proxy
+ARG NO_PROXY
+ARG no_proxy
+
+# HTTPS 出站（钉钉 / MCP）；不装 unzip / 不留 npm 全局包
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY --from=fetch /opt/dws-prefix/node_modules/dingtalk-workspace-cli/vendor/dws /usr/local/bin/dws
+
 ENV DWS_CONFIG_DIR=/dws-home
 WORKDIR /work
-# 默认入口不 login；由编排器传入 bash -lc 脚本
+# 编排器用 --entrypoint bash -lc；默认仍直接进 dws
 ENTRYPOINT ["dws"]

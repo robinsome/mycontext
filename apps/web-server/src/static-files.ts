@@ -19,6 +19,7 @@ const MIME: Record<string, string> = {
   ".md": "text/plain; charset=utf-8",
   ".sh": "text/x-shellscript; charset=utf-8",
   ".ps1": "text/plain; charset=utf-8",
+  ".ts": "text/plain; charset=utf-8",
   ".template": "text/plain; charset=utf-8",
 }
 

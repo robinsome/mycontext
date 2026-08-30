@@ -8,22 +8,21 @@ MyContext — 客户端采集说明（调试/应急）
 --------------------------------------------------------------------------------
 · 只需：本页扫码登录，点「运行采集」。
 · 本机不装 dws。
-· 当前已映射能力有限（如本人身份）；会话列表在开放平台尚无用户 token
-  等价 HTTP，服务器无法单独采全会话。
+· 当前已映射能力有限；会话列表等由服务端 sidecar 补齐。
 
 --------------------------------------------------------------------------------
 路径 B：本机 dws 导出并推送（调试/应急 · 补会话 / 消息）
 --------------------------------------------------------------------------------
 本机需要：
 
-1) Node.js LTS（含 npm）—— https://nodejs.org/
+1) Node.js LTS（含 npm / npx）—— https://nodejs.org/
 2) 渠道 CLI「dws」1.0.60：
      npm install -g dingtalk-workspace-cli@1.0.60
      dws auth login
-3) 本页登录后自动领取的 Sync Token 与 Vault ID（或下载脚本已写入）
-4) 下载并运行本页提供的脚本：
-     · collect-from-dws.sh   （macOS / Linux）
-     · collect-from-dws.ps1  （Windows PowerShell）
+3) 本页登录后自动领取的 Sync Token 与 Vault ID（下载脚本已写入）
+4) 下载 TypeScript 脚本后执行：
+     npx --yes tsx ./mycontext-collect-from-dws.ts
+     npx --yes tsx ./mycontext-collect-from-dws.ts --hours 0
 
 脚本会：探活 dws → 拉会话列表（并尽量补群列表）→ 可选近 N 小时消息
 → 写成四件套 JSON → POST 到本站 /api/v1/channel-sync。
@@ -38,7 +37,7 @@ MyContext — 客户端采集说明（调试/应急）
 推荐操作顺序
 --------------------------------------------------------------------------------
 1. 本页扫码登录（确认 Vault ID / Sync Token 已自动填充）。
-2. 下载对应系统的 collect-from-dws 脚本。
+2. 下载 collect-from-dws.ts。
 3. 本机安装 dws 并 dws auth login。
-4. 运行脚本（默认回看 24 小时消息；只要会话可加参数 hours=0）。
+4. npx --yes tsx ./mycontext-collect-from-dws.ts（默认回看 24h；只要会话加 --hours 0）。
 5. 回到本页「同步状态」确认 hasExport。

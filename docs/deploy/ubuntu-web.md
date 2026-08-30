@@ -39,7 +39,7 @@
 
 | 变量 | 必填 | 说明 |
 | --- | --- | --- |
-| `MYCONTEXT_DWS_SIDECAR_IMAGE` | **是**（启用 sidecar 采集时） | 预构建镜像名，如 `mycontext-dws-sidecar:0.1.0`；web-server 通过 `docker run` 按 vault 拉起 |
+| `MYCONTEXT_DWS_SIDECAR_IMAGE` | **是**（启用 sidecar 采集时） | 预构建镜像名，如 `mycontext-dws-sidecar:0.1.1`；web-server 通过 `docker run` 按 vault 拉起 |
 | `MYCONTEXT_DWS_SIDECAR_MAX_CONCURRENT` | 否 | 同时运行的 sidecar 容器上限，默认 `2` |
 | `MYCONTEXT_HOST_DATA_DIR` | **是**（web-server 在容器内且启用 sidecar 时） | 宿主机上 `mycontext-data` 卷的 mountpoint（或 bind mount 的 data 绝对路径）。compose 将其**同路径**再 bind 进 web-server，以便容器内 `docker --env-file` 能打开 sidecar 临时 env 文件；Node 仍经 `/data` 读写 |
 
@@ -57,23 +57,46 @@ Compose 已在 **web-server** 挂载 `/var/run/docker.sock`（仅编排器用）
 在**能访问 Docker Hub** 的机器（仓库根目录）：
 
 ```bash
-docker build -f deploy/Dockerfile.dws-sidecar -t mycontext-dws-sidecar:0.1.0 .
+# 基座 node:22.23.0-slim；多阶段只拷 dws。linux/amd64 实测 docker images Size ≈95MB（<100MB）。
+docker build -f deploy/Dockerfile.dws-sidecar -t mycontext-dws-sidecar:0.1.1 .
 # 或跨平台：
-docker buildx build --platform linux/amd64 -t mycontext-dws-sidecar:0.1.0 \
+docker buildx build --platform linux/amd64 -t mycontext-dws-sidecar:0.1.1 \
   -f deploy/Dockerfile.dws-sidecar --load .
 ```
 
-镜像预装 `dingtalk-workspace-cli@1.0.60` 与 `unzip`（CLI postinstall 解压 skills）。默认 `ENTRYPOINT` 为 `dws`；运行时由 web-server 传入 `bash -lc` 脚本完成 `auth login --token` 与白名单命令。
+镜像：多阶段构建只保留 `vendor/dws`（不装 npm 全局包 / skills）；最终层另含 `ca-certificates`。默认 `ENTRYPOINT` 为 `dws`；运行时由 web-server 传入 `bash -lc` 完成 `auth login --token` 与白名单命令。
 
-离线带到 Ubuntu：
+离线带到 Ubuntu（snap Docker：归档放 `$HOME`，勿放 `/tmp`）：
 
 ```bash
-docker save mycontext-dws-sidecar:0.1.0 | gzip -c > mycontext-dws-sidecar-0.1.0.tar.gz
+docker save mycontext-dws-sidecar:0.1.1 | gzip -c > mycontext-dws-sidecar-0.1.1.tar.gz
 # Ubuntu 上：
-docker load -i mycontext-dws-sidecar-0.1.0.tar.gz
+docker load -i mycontext-dws-sidecar-0.1.1.tar.gz
 ```
 
-在 `deploy/.env` 设置 `MYCONTEXT_DWS_SIDECAR_IMAGE=mycontext-dws-sidecar:0.1.0` 后重启 compose。
+在 `deploy/.env` 设置 `MYCONTEXT_DWS_SIDECAR_IMAGE=mycontext-dws-sidecar:0.1.1` 后重启 compose。
+
+### 部署机 Docker Hub 需代理时（如 wsl-dev）
+
+`docker pull` 走 **dockerd**，仅 export `HTTP_PROXY` 无效。snap Docker 示例（需 sudo）：
+
+```bash
+sudo snap set docker http-proxy=http://127.0.0.1:8080
+sudo snap set docker https-proxy=http://127.0.0.1:8080
+sudo snap restart docker
+docker pull node:22.23.0-slim
+```
+
+构建阶段 apt/npm 另传 build-arg（基座已在本机时）：
+
+```bash
+docker build \
+  --build-arg HTTP_PROXY=http://127.0.0.1:8080 \
+  --build-arg HTTPS_PROXY=http://127.0.0.1:8080 \
+  -f deploy/Dockerfile.dws-sidecar -t mycontext-dws-sidecar:0.1.1 .
+```
+
+无 sudo 时：在能访问 Hub 的机器 build + `docker save`，再 scp/`docker load` 到部署机。
 
 ## 架构（过渡：本机 dws 推送）
 
@@ -157,7 +180,7 @@ Ubuntu 上：**两个** tar.gz 都要 `docker load -i …`，再配 `.env` 并 `
 ```bash
 MYCONTEXT_IMAGE=mycontext-web-server
 MYCONTEXT_PULL_POLICY=missing
-MYCONTEXT_DWS_SIDECAR_IMAGE=mycontext-dws-sidecar:0.1.0
+MYCONTEXT_DWS_SIDECAR_IMAGE=mycontext-dws-sidecar:0.1.1
 ```
 
 `MYCONTEXT_IMAGE_TAG` 须与 load 的 tag 一致（默认 `0.1.0`）。详见同目录 `README-LOAD.txt`。
@@ -180,7 +203,7 @@ curl -sS http://127.0.0.1:8787/health
 | `MYCONTEXT_PORT` | 否 | 容器内监听端口，默认 `8787` |
 | `MYCONTEXT_HOST` | 否 | 默认 `0.0.0.0` |
 | `KL_SERVER_PORT` | 否 | 同机 kl-server 端口，默认 `8200`（kl 未部署时可忽略） |
-| `MYCONTEXT_DWS_SIDECAR_IMAGE` | sidecar 采集时必填 | 如 `mycontext-dws-sidecar:0.1.0` |
+| `MYCONTEXT_DWS_SIDECAR_IMAGE` | sidecar 采集时必填 | 如 `mycontext-dws-sidecar:0.1.1` |
 | `MYCONTEXT_DWS_SIDECAR_MAX_CONCURRENT` | 否 | sidecar 并发上限，默认 `2` |
 
 Compose 额外变量（写在 `deploy/.env`）：

@@ -54,21 +54,16 @@ async function loadSyncTokenFromServer() {
     setTokenHint("未登录：扫码后自动获取 Sync Token")
     return false
   }
-  if (response.status === 409) {
-    setTokenHint(
-      typeof body.message === "string"
-        ? body.message
-        : "Sync Token 由部署环境锁定，请在服务器配置中读取",
-    )
-    return false
-  }
   if (!response.ok || typeof body.token !== "string") {
-    setTokenHint("获取 Sync Token 失败")
+    setTokenHint(
+      typeof body.message === "string" ? body.message : "获取 Sync Token 失败",
+    )
     return false
   }
   sessionStorage.setItem(TOKEN_KEY, body.token)
   tokenInput.value = ""
-  setTokenHint(`已从服务器加载（前缀 ${body.prefix ?? ""}）`)
+  const locked = body.envLocked === true ? "（部署环境锁定，不可在此轮换）" : ""
+  setTokenHint(`已从服务器加载（前缀 ${body.prefix ?? ""}）${locked}`)
   return true
 }
 
@@ -231,8 +226,7 @@ if (
 }
 
 const clientHours = document.getElementById("client-hours")
-const dlShBtn = document.getElementById("dl-sh-btn")
-const dlPs1Btn = document.getElementById("dl-ps1-btn")
+const dlTsBtn = document.getElementById("dl-ts-btn")
 const clientCollectHint = document.getElementById("client-collect-hint")
 
 function syncUrlForClient() {
@@ -263,19 +257,19 @@ async function fillClientScript(templatePath, filename) {
     let vaultId = vaultInput.value.trim() || sessionStorage.getItem(VAULT_KEY) || ""
     let token = getToken() || ""
 
-    // 部署用 env 锁定 token 时 GET /sync/token 会 409：允许用输入框里已粘贴的值；
-    // 仍没有则写入占位符，脚本内需用户自行替换（说明写在 hint）。
-    let tokenNote = ""
     if (!token) {
       const typed = tokenInput.value.trim()
       if (typed) {
         token = typed
         sessionStorage.setItem(TOKEN_KEY, typed)
-      } else {
-        token = "REPLACE_WITH_MYCONTEXT_SYNC_TOKEN"
-        tokenNote =
-          "当前无法自动领取 Sync Token（多为部署环境变量锁定）。脚本里已写占位符 REPLACE_WITH_MYCONTEXT_SYNC_TOKEN，请改成服务器 .env 中的值后再运行。"
       }
+    }
+    if (!token) {
+      if (hint) {
+        hint.textContent =
+          "缺少 Sync Token：请先扫码登录（登录后会自动写入），或在设置里粘贴 token 后再下载。"
+      }
+      return
     }
     if (!vaultId) {
       if (hint) hint.textContent = "缺少 Vault ID：请先扫码登录。"
@@ -298,28 +292,18 @@ async function fillClientScript(templatePath, filename) {
       .replaceAll("__HOURS__", hours)
     downloadTextFile(filename, text)
     if (hint) {
-      hint.textContent = tokenNote
-        ? `已下载 ${filename}。${tokenNote}`
-        : `已下载 ${filename}（含当前站点凭证）。请勿提交到 git；运行前确认已 dws auth login。`
+      hint.textContent = `已下载 ${filename}（含当前站点凭证）。请勿提交到 git；运行前确认已 dws auth login。`
     }
   } catch (error) {
     if (hint) hint.textContent = error instanceof Error ? error.message : String(error)
   }
 }
 
-if (dlShBtn instanceof HTMLButtonElement) {
-  dlShBtn.addEventListener("click", () => {
+if (dlTsBtn instanceof HTMLButtonElement) {
+  dlTsBtn.addEventListener("click", () => {
     void fillClientScript(
-      "/client/collect-from-dws.sh.template",
-      "mycontext-collect-from-dws.sh",
-    )
-  })
-}
-if (dlPs1Btn instanceof HTMLButtonElement) {
-  dlPs1Btn.addEventListener("click", () => {
-    void fillClientScript(
-      "/client/collect-from-dws.ps1.template",
-      "mycontext-collect-from-dws.ps1",
+      "/client/collect-from-dws.ts.template",
+      "mycontext-collect-from-dws.ts",
     )
   })
 }

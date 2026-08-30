@@ -48,6 +48,16 @@ export const syncTokenRotateResponseSchema = z.object({
 
 export type SyncTokenRotateResponse = z.infer<typeof syncTokenRotateResponseSchema>
 
+/** GET /api/v1/sync/token —— 钉钉 OAuth 或 Bearer 后回显当前 file-backed token。 */
+export const syncTokenGetResponseSchema = z.object({
+  ok: z.literal(true),
+  token: z.string().min(1),
+  prefix: z.string().min(1),
+  envLocked: z.literal(false),
+})
+
+export type SyncTokenGetResponse = z.infer<typeof syncTokenGetResponseSchema>
+
 export const SYNC_TOKEN_ERROR = {
   UNAUTHORIZED: "unauthorized",
   ENV_LOCKED: "env_locked",
