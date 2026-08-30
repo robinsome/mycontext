@@ -1,13 +1,13 @@
 name: Build and Release Desktop App
 
-# macOS arm64 发版包。路径约定见 apps/desktop/electron-builder.yml：
+# macOS arm64 + Windows x64 发版包。路径约定见 apps/desktop/electron-builder.yml：
 # 所有 from/files/output 相对**仓库根**；必须从仓库根调 electron-builder，
 # 并显式传 --config。在 apps/desktop 下 `pnpm --filter … exec` 会把
 # projectDir 当成 apps/desktop，产出叠成 apps/desktop/apps/desktop/release，
 # asar 入口 apps/desktop/out/main/index.js 也找不到（run 33280873242 实测）。
 #
-# 产物：`dir`（yml 默认） alone 不会进 Artifacts/Releases 可下文件；
-# CI 显式打 `dmg`，再 upload-artifact + `--publish always`（写 GitHub Release）。
+# 产物：CI 显式打 mac `dmg` / win `nsis+portable`，再 upload-artifact +
+# `--publish always`（写 GitHub Release）。
 
 on:
   push:
@@ -24,12 +24,28 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     strategy:
+      fail-fast: false
       matrix:
-        os: [macos-14]
+        os: [macos-14, windows-latest]
 
     steps:
+      - name: Force LF checkouts (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
       - name: Check out repository
         uses: actions/checkout@v7
+
+      - name: Preserve Forge integrity bytes (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          git config core.autocrlf false
+          git config core.eol lf
+          git checkout -- vendor/forge
 
       - uses: pnpm/action-setup@v6
 
@@ -42,13 +58,25 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # 与本地 `pnpm dist:mac` 同序：Electron ABI 重建 → bin → 压平 Python → vite。
+      # Windows：kl 需要原生 Python + 依赖；脚本会下载、校验并准备 venv。
+      - name: Prepare Windows Python runtime
+        if: runner.os == 'Windows'
+        run: pnpm setup:python
+
+      # mac：与本地 `pnpm dist:mac` 同序：Electron ABI 重建 → bin → 压平 Python → vite。
       - name: Build app (native + resources + vite)
+        if: runner.os == 'macOS'
         run: pnpm run build:app
+
+      # Windows：先产出 win-unpacked（含 win better-sqlite3 换装）。
+      - name: Build Windows x64 unpacked
+        if: runner.os == 'Windows'
+        run: pnpm dist:win
 
       # ★ 必须在仓库根执行，并带 --config；不要用 filter exec（见文件头）。
       # `--mac dmg` 覆盖 yml 里仅 `dir` 的 target，产出可下载的 .dmg。
-      - name: Package Desktop Application
+      - name: Package macOS arm64 (dmg)
+        if: runner.os == 'macOS'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: >
@@ -57,11 +85,32 @@ jobs:
           --publish always
           --config apps/desktop/electron-builder.yml
 
-      # 与 package-windows-x64 对称：跑完就能在 Actions 页下载，不依赖 Release。
+      # Windows 专用 yml 打 nsis/portable；npmRebuild 写在 yml 里
+      #（PowerShell 会拆坏 -c.npmRebuild=false）。
+      - name: Package Windows x64 (nsis + portable)
+        if: runner.os == 'Windows'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >
+          pnpm exec electron-builder
+          --win nsis portable --x64
+          --publish always
+          --config apps/desktop/electron-builder.windows.yml
+
       - name: Upload macOS arm64 packages
+        if: runner.os == 'macOS'
         uses: actions/upload-artifact@v7
         with:
           name: MyContext-macos-arm64
+          path: apps/desktop/release/**
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Windows x64 packages
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v7
+        with:
+          name: MyContext-windows-x64
           path: apps/desktop/release/**
           if-no-files-found: error
           retention-days: 14

@@ -51,7 +51,6 @@ import { useState } from "react"
 import { Button, Field, Input, Tag, cn } from "@mycontext/design"
 import type {
   CursorRuntime,
-  ModelProvider,
   RuntimeConfigProbe,
   RuntimeConfigView,
   SaveRuntimeConfigInput,
@@ -70,8 +69,7 @@ export interface ModelConfigFormProps {
  * 还没探测时的推荐模型档位。
  *
  * ★ 给档位而不是空输入框（与 `PersonaRuntimePanel` 同一个判断：
- * "给档位就是给建议"）。这几个是本机网关实测能用的：`glm-5.2` 是默认
- * （openai + anthropic 双协议都支持，主 LLM 与知识库抽取可以共用一个）。
+ * "给档位就是给建议"）。这几个是本机网关实测能用的：`glm-5.2` 是默认。
  *
  * 探测成功后**用真实列表替换**它 —— 兜底值的作用只是"别让第一眼是空的"。
  */
@@ -99,13 +97,9 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
   /** 向量模型名手输模式（探测列表里没有想要的那个时） */
   const [customEmbed, setCustomEmbed] = useState(false)
   const [apiKey, setApiKey] = useState("")
-  /** 主模型协议草稿。null = 未编辑（用探测识别值或已存值）。 */
-  const [mainProvider, setMainProvider] = useState<ModelProvider | null>(null)
   const [klBaseUrl, setKlBaseUrl] = useState<string | null>(null)
   const [klModel, setKlModel] = useState<string | null>(null)
   const [klApiKey, setKlApiKey] = useState("")
-  /** 知识库协议草稿。null = 未编辑（用探测识别值或已存值）。 */
-  const [klProvider, setKlProvider] = useState<ModelProvider | null>(null)
   /** Agent API Key 草稿（空串 = 不改，与 llmApiKey 同语义）。 */
   const [cursorApiKey, setCursorApiKey] = useState("")
   /** Agent 运行时落点草稿。null = 未编辑。 */
@@ -157,7 +151,6 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
   const dirty =
     llmBaseUrl !== null ||
     modelMain !== null ||
-    mainProvider !== null ||
     embedModel !== null ||
     embedLlmBaseUrl !== null ||
     embedLlmApiKey !== "" ||
@@ -165,7 +158,6 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
     embedSendDimensions !== null ||
     klBaseUrl !== null ||
     klModel !== null ||
-    klProvider !== null ||
     cursorRuntime !== null ||
     apiKey !== "" ||
     klApiKey !== "" ||
@@ -175,7 +167,6 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
     const patch: SaveRuntimeConfigInput = {}
     if (llmBaseUrl !== null) patch.llmBaseUrl = llmBaseUrl
     if (modelMain !== null) patch.modelMain = modelMain
-    if (mainProvider !== null) patch.mainProvider = mainProvider
     if (embedModel !== null) patch.embedModel = embedModel
     if (embedLlmBaseUrl !== null) patch.embedLlmBaseUrl = embedLlmBaseUrl
     if (embedLlmApiKey !== "") patch.embedLlmApiKey = embedLlmApiKey
@@ -189,7 +180,6 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
     if (klBaseUrl !== null) patch.klLlmBaseUrl = klBaseUrl
     if (klModel !== null) patch.klModelMain = klModel
     if (klApiKey !== "") patch.klLlmApiKey = klApiKey
-    if (klProvider !== null) patch.klProvider = klProvider
     if (cursorApiKey !== "") patch.cursorApiKey = cursorApiKey
     if (cursorRuntime !== null) patch.cursorRuntime = cursorRuntime
     save.mutate(patch, {
@@ -200,7 +190,6 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
         setCursorApiKey("")
         setLlmBaseUrl(null)
         setModelMain(null)
-        setMainProvider(null)
         setEmbedModel(null)
         setEmbedLlmBaseUrl(null)
         setEmbedLlmApiKey("")
@@ -208,7 +197,6 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
         setEmbedSendDimensions(null)
         setKlBaseUrl(null)
         setKlModel(null)
-        setKlProvider(null)
         setCursorRuntime(null)
         onSaved?.()
       },
@@ -289,70 +277,7 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
     return named.length > 0 ? named : embedResult.models
   })()
 
-  /**
-   * 某个**具体模型**支持哪些协议（读探测到的 `modelProviders`）。
-   *
-   * 探到该模型的 `supported_endpoint_types` 就用它；探不到（老网关不给、或
-   * 没探过）回退到**网关级**支持集。这让"选了只支持 openai 的模型"时
-   * anthropic chip 能标灰，而不是拿网关整体的支持集去糊每个模型。
-   */
-  const providersFromProbe = (
-    probeResult: RuntimeConfigProbe | undefined,
-    model: string,
-  ): readonly ModelProvider[] => {
-    const per = probeResult?.ok === true ? probeResult.modelProviders[model] : undefined
-    if (per !== undefined && per.length > 0) return per
-    return probeResult?.ok === true && probeResult.providers.length > 0
-      ? probeResult.providers
-      : (["openai", "anthropic"] as const)
-  }
-
-  const providersForModel = (model: string): readonly ModelProvider[] =>
-    providersFromProbe(result, model)
-
-  /**
-   * 某个模型的**推荐协议**：它支持 anthropic 就选 anthropic（claude 类走原生协议
-   * 信息更全），否则 openai。这就是"从列表里选一个模型 → 自动选好它的协议"。
-   */
-  const preferredProviderFrom = (
-    probeResult: RuntimeConfigProbe | undefined,
-    model: string,
-  ): ModelProvider => (providersFromProbe(probeResult, model).includes("anthropic") ? "anthropic" : "openai")
-
-  const preferredProviderFor = (model: string): ModelProvider => preferredProviderFrom(result, model)
-
-  /**
-   * 知识库那一路**实际会用**的协议：
-   * 用户手动切的 > 新鲜探测下**所选 kl 模型**的推荐协议 > 已存值。
-   *
-   * ★ 从"网关级识别值"改成"按所选模型"：同一个网关里有的模型只支持 openai、
-   * 有的两者都支持，拿网关级的一个值套所有模型是错的。用户手选仍然优先
-   * （`klProvider !== null`），选模型时会把手选清掉（见 onPick），于是自动重算。
-   */
   const klModelValue = klModel ?? current.klModelMain.value
-  const effectiveKlProvider: ModelProvider =
-    klProvider ??
-    (klResult?.ok === true && klModelValue.trim() !== ""
-      ? preferredProviderFrom(klResult, klModelValue)
-      : null) ??
-    current.klEffective.provider
-
-  /**
-   * 主模型实际会用的协议：用户手动切的 > 新鲜探测下**所选主模型**的推荐协议 > 已存值。
-   */
-  const effectiveMainProvider: ModelProvider =
-    mainProvider ??
-    (result?.ok === true && modelValue.trim() !== "" ? preferredProviderFor(modelValue) : null) ??
-    current.mainProvider.value
-
-  /**
-   * 探测识别到的网关**支持的协议集**（网关级，用于顶部 tag）。没探过（或探测没给
-   * 协议信息）时两个都摆出来 —— 让用户仍能手选，只是没有"这个网关支持哪些"的确证。
-   */
-  const klSupportedProviders: readonly ModelProvider[] =
-    klResult?.ok === true && klResult.providers.length > 0
-      ? klResult.providers
-      : ["openai", "anthropic"]
 
   const effectiveCursorRuntime: CursorRuntime = cursorRuntime ?? current.cursorRuntime.value
 
@@ -415,14 +340,6 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
                 {t("model.probe.fromGateway", { count: result.models.length })}
               </Tag>
             )}
-            {/* 探测识别到的网关**支持的协议集** —— 让用户看见这网关到底支持哪些 */}
-            {result?.ok === true && result.providers.length > 0 && (
-              <Tag size="sm" status="default">
-                {t("model.probe.detectedProtocol", {
-                  provider: result.providers.map((p) => t(`model.provider.${p}`)).join(" / "),
-                })}
-              </Tag>
-            )}
           </div>
           <ChipPicker
             options={modelOptions}
@@ -430,9 +347,6 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
             onPick={(next) => {
               setModelMain(next)
               setCustomModel(false)
-              // ★ 选了模型就把手动协议清掉 → effectiveMainProvider 自动取该模型的
-              // 推荐协议（有 anthropic 选 anthropic）。用户之后仍可再手动切。
-              setMainProvider(null)
             }}
             otherLabel={t("model.other")}
             custom={customModel || !modelOptions.includes(modelValue)}
@@ -462,23 +376,6 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
               </span>
             )}
         </div>
-
-        {/*
-          ★ 主模型协议选择器 —— 现在可切（去掉了原来那句"不可切换"）。
-          直连 LlmClient 按它走 /v1/messages 或 /v1/chat/completions。
-          两个 chip 亮不亮由**所选模型**的 supported_endpoint_types 决定（不是网关整体）——
-          选了只支持 openai 的模型时 anthropic chip 就标灰。
-        */}
-        <ProviderPicker
-          label={t("model.provider.protocol")}
-          hint={t("model.provider.mainProtocolHint")}
-          value={effectiveMainProvider}
-          supported={providersForModel(modelValue)}
-          onPick={setMainProvider}
-          openaiLabel={t("model.provider.openai")}
-          anthropicLabel={t("model.provider.anthropic")}
-          unsupportedLabel={t("model.provider.unsupported")}
-        />
       </section>
 
       {/*
@@ -716,26 +613,6 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
           <ProbeResult result={klResult} failed={klProbeFresh && klProbe.isError} />
         </div>
 
-        {/*
-          ★ 协议选择器 —— 知识库那一路真能切协议（传给 kl 的 KL_LLM_PROVIDER）。
-          两个 chip 亮不亮由**所选 kl 模型**的 supported_endpoint_types 决定，点击可覆盖。
-          这就是「OpenAI 兼容网关被当 Anthropic 发 → 404」那个报错的用户侧修复。
-        */}
-        <ProviderPicker
-          label={t("model.provider.protocol")}
-          hint={t("model.kl.protocolHint")}
-          value={effectiveKlProvider}
-          supported={
-            klModelValue.trim() !== ""
-              ? providersFromProbe(klResult, klModelValue)
-              : klSupportedProviders
-          }
-          onPick={setKlProvider}
-          openaiLabel={t("model.provider.openai")}
-          anthropicLabel={t("model.provider.anthropic")}
-          unsupportedLabel={t("model.provider.unsupported")}
-        />
-
         <div className="flex flex-col gap-[var(--gap-component-sm)]">
           <div className="flex items-center gap-2">
             <span className="typography-body-small-400 text-[var(--text-base-secondary)]">
@@ -753,9 +630,6 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
             onPick={(next) => {
               setKlModel(next)
               setCustomKl(false)
-              // ★ 选了 kl 模型就把手动协议清掉 → effectiveKlProvider 自动取该模型的
-              // 推荐协议（有 anthropic 选 anthropic）。用户之后仍可再手动切。
-              setKlProvider(null)
             }}
             // 空值 = 跟随主配置，所以这里多一个「跟随」档
             inheritLabel={t("model.kl.inherited")}
@@ -872,65 +746,6 @@ function ProbeResult({
     >
       {t(`model.probe.reason.${result.reason ?? "unreachable"}`)}
     </span>
-  )
-}
-
-/**
- * 协议选择器（openai / anthropic 两个 chip）。
- *
- * ★ 两个 chip 都**始终显示**，但网关探测确认不支持的那个标灰、点了给一行提示 ——
- * 而不是把它藏掉。藏掉的话用户会以为"这网关只有一个协议"，而这正是之前那个
- * 误导性 bug 的另一种形态。显示 + 标注既诚实又不挡手（没探过时两个都可点）。
- */
-function ProviderPicker({
-  label,
-  hint,
-  value,
-  supported,
-  onPick,
-  openaiLabel,
-  anthropicLabel,
-  unsupportedLabel,
-}: {
-  label: string
-  hint: string
-  value: ModelProvider
-  /** 探测确认网关支持的协议集（没探过时传两个都在，等于不限制）。 */
-  supported: readonly ModelProvider[]
-  onPick: (next: ModelProvider) => void
-  openaiLabel: string
-  anthropicLabel: string
-  /** 选了一个网关不支持的协议时的提示文案。 */
-  unsupportedLabel: string
-}) {
-  const options: { id: ModelProvider; label: string }[] = [
-    { id: "openai", label: openaiLabel },
-    { id: "anthropic", label: anthropicLabel },
-  ]
-  // 当前选中的协议不在网关支持集里 → 给一行警告（与 modelNotListed 同一个防法）。
-  const pickedUnsupported = supported.length > 0 && !supported.includes(value)
-  return (
-    <div className="flex flex-col gap-[var(--gap-component-sm)]">
-      <span className="typography-body-small-400 text-[var(--text-base-secondary)]">{label}</span>
-      <div className="flex flex-wrap gap-1.5">
-        {options.map((option) => {
-          const isSupported = supported.length === 0 || supported.includes(option.id)
-          return (
-            <Chip key={option.id} selected={value === option.id} onClick={() => onPick(option.id)}>
-              {/* 网关明确不支持的那个：标一个「!」提示它没被验证过，但仍可点 */}
-              {isSupported ? option.label : `${option.label} !`}
-            </Chip>
-          )
-        })}
-      </div>
-      {pickedUnsupported ? (
-        <span className="typography-caption-400 text-[var(--status-warning)]">
-          {unsupportedLabel}
-        </span>
-      ) : (
-        <span className="typography-caption-400 text-[var(--text-base-tertiary)]">{hint}</span>
-      )}
-    </div>
   )
 }
 

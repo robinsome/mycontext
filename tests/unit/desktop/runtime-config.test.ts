@@ -461,13 +461,9 @@ describe("网关探测", () => {
   })
 
   /**
-   * ★★ 这条锁的是"明明两种协议都支持却被报成 openai 单一"那个 bug。
-   *
-   * 真实网关（本机 mulerun）的 `/v1/models` 会逐模型标 `supported_endpoint_types`，
-   * 多数 claude/glm 是 `["anthropic","openai"]`。探测必须据此汇总出**两个**协议、
-   * 并给出每模型的支持集，而不是只按信封形状猜一个。
+   * 桌面端只走 OpenAI 兼容：即便网关标了 anthropic，探测结果也只报 openai。
    */
-  it("★★ supported_endpoint_types 决定支持集（两个协议都要亮）", async () => {
+  it("探测结果固定 openai（忽略 supported_endpoint_types 里的 anthropic）", async () => {
     const { impl } = fakeFetch(() => ({
       status: 200,
       body: {
@@ -478,158 +474,113 @@ describe("网关探测", () => {
             supported_endpoint_types: ["anthropic", "openai"],
           },
           { id: "qwen-plus", object: "model", supported_endpoint_types: ["openai"] },
-          // 网关还可能标别的口（gemini/图像）——只保留我们认的两种
-          { id: "gemini-x", object: "model", supported_endpoint_types: ["gemini", "openai"] },
         ],
       },
     }))
     const ctx = makeService(loadConfig(), {}, impl)
     const result = await ctx.service.probe({ baseUrl: "https://gw.example", apiKey: "sk-x" })
     expect(result.ok).toBe(true)
-    // 网关支持集含两个（不再是单一 openai）
-    expect([...result.providers].sort()).toEqual(["anthropic", "openai"])
-    // 推荐默认优先 anthropic（网关支持它时）
-    expect(result.provider).toBe("anthropic")
-    // 每模型支持集：claude 两个、qwen 只 openai、gemini 里只留 openai
-    expect(result.modelProviders["claude-opus-4-8"]).toEqual(["anthropic", "openai"])
+    expect(result.providers).toEqual(["openai"])
+    expect(result.provider).toBe("openai")
+    expect(result.modelProviders["claude-opus-4-8"]).toEqual(["openai"])
     expect(result.modelProviders["qwen-plus"]).toEqual(["openai"])
-    expect(result.modelProviders["gemini-x"]).toEqual(["openai"])
     ctx.close()
   })
 
   /**
-   * ★★ 双协议探测：纯 Anthropic 网关对 Bearer 头返 404（不认这个口），
-   * 探测必须换 `x-api-key` + `anthropic-version` 头再试一次，并从
-   * `{data:[{type:"model", display_name}]}` 的形状识别出 anthropic。
-   *
-   * 这条锁的正是同事那个报错的另一面：给了 Anthropic 网关时也要能识别对，
-   * 而不是笼统报 badResponse。
+   * Anthropic 专用口（Bearer 404）不再重试 —— 桌面端已移除 Anthropic 接口。
    */
-  it("Anthropic 网关：Bearer 404 → 换 x-api-key 重试 → provider anthropic", async () => {
-    const seenHeaders: Array<Record<string, string> | undefined> = []
-    const { impl, urls } = fakeFetch((_url, init) => {
-      const headers = init?.headers as Record<string, string> | undefined
-      seenHeaders.push(headers)
-      // 第 1 次（Bearer）：这个口不认 → 404；第 2 次（x-api-key）：200
-      if (headers?.["Authorization"] !== undefined) return { status: 404, body: "not found" }
-      return {
-        status: 200,
-        body: {
-          data: [{ id: "claude-opus-4-6", type: "model", display_name: "Claude Opus 4.6" }],
-          has_more: false,
-        },
-      }
-    })
+  it("Bearer 404 不再换 x-api-key 重试", async () => {
+    const { impl, urls } = fakeFetch(() => ({ status: 404, body: "not found" }))
     const ctx = makeService(loadConfig(), {}, impl)
     const result = await ctx.service.probe({ baseUrl: "https://anthropic.example", apiKey: "sk-a" })
-    expect(result.ok).toBe(true)
-    expect(result.provider).toBe("anthropic")
-    expect(result.models).toEqual(["claude-opus-4-6"])
-    // 两次请求：先 openai 口、后 anthropic 口
-    expect(urls.length).toBe(2)
-    expect(seenHeaders[1]?.["x-api-key"]).toBe("sk-a")
-    expect(seenHeaders[1]?.["anthropic-version"]).toBe("2023-06-01")
+    expect(result.ok).toBe(false)
+    expect(result.reason).toBe("badResponse")
+    expect(urls.length).toBe(1)
     ctx.close()
   })
 
-  it("401 不触发换协议重试（地址对、密钥不对）", async () => {
+  it("401 归 unauthorized（只打一次）", async () => {
     const { impl, urls } = fakeFetch(() => ({ status: 401, body: { error: "bad key" } }))
     const ctx = makeService(loadConfig(), {}, impl)
     const result = await ctx.service.probe({ baseUrl: "https://gw.example", apiKey: "sk-bad" })
     expect(result.reason).toBe("unauthorized")
-    // 只打一次网络：401 是密钥问题，换协议也没用
     expect(urls.length).toBe(1)
     ctx.close()
   })
 })
 
 /**
- * KL 抽取协议（`klProvider`）。
- *
- * ★★ 锁的是那个 404 报错的根因：桌面端从前不给 kl 传协议，kl 默认 anthropic，
- * 把 OpenAI 兼容网关当 Anthropic 发。现在：默认 openai、可存覆盖、可 env 覆盖，
- * 并经 `resolved().klProvider` → `KlGatewayConfig.llmProvider` 传给 kl。
+ * 协议固定 openai（桌面端已移除 Anthropic 接口）。
  */
-describe("KL 抽取协议", () => {
-  it("默认 openai（与 kl-graph 自身默认 anthropic 故意分歧）", () => {
-    const ctx = makeService()
-    expect(ctx.service.resolved().klProvider).toBe("openai")
-    const v = ctx.service.view()
-    expect(v.klProvider.value).toBe("openai")
-    expect(v.klProvider.source).toBe("default")
-    expect(v.klEffective.provider).toBe("openai")
-    ctx.close()
-  })
-
-  it("save 覆盖为 anthropic", () => {
-    const ctx = makeService()
-    ctx.service.save({ klProvider: "anthropic" }, NOW)
-    expect(ctx.service.resolved().klProvider).toBe("anthropic")
-    const v = ctx.service.view()
-    expect(v.klProvider.value).toBe("anthropic")
-    expect(v.klProvider.source).toBe("user")
-    expect(v.klEffective.provider).toBe("anthropic")
-    ctx.close()
-  })
-
-  it("env 层可覆盖（MYCONTEXT_KL_PROVIDER）", () => {
-    const defaults = loadConfig({ env: { MYCONTEXT_KL_PROVIDER: "anthropic" } })
-    const ctx = makeService(defaults)
-    expect(ctx.service.resolved().klProvider).toBe("anthropic")
-    expect(ctx.service.view().klProvider.source).toBe("env")
-    ctx.close()
-  })
-})
-
-/**
- * 主模型协议（`mainProvider`）—— 现在可切。
- *
- * opencode 子进程与直连 LlmClient 都按它切传输，并经 `seedProcessEnv` 写进
- * `MYCONTEXT_MODEL_PROVIDER` 给子进程（装配层还会显式传，见 startup）。
- */
-describe("主模型协议", () => {
+describe("KL / 主模型协议固定 openai", () => {
   it("默认 openai", () => {
     const ctx = makeService()
+    expect(ctx.service.resolved().klProvider).toBe("openai")
     expect(ctx.service.resolved().mainProvider).toBe("openai")
-    const v = ctx.service.view()
-    expect(v.mainProvider.value).toBe("openai")
-    expect(v.mainProvider.source).toBe("default")
+    expect(ctx.service.view().klProvider.value).toBe("openai")
+    expect(ctx.service.view().mainProvider.value).toBe("openai")
+    expect(ctx.service.view().klProvider.source).toBe("default")
+    expect(ctx.service.view().mainProvider.source).toBe("default")
     ctx.close()
   })
 
-  it("save 覆盖为 anthropic", () => {
+  it("save anthropic 仍解析为 openai", () => {
     const ctx = makeService()
-    ctx.service.save({ mainProvider: "anthropic" }, NOW)
-    expect(ctx.service.resolved().mainProvider).toBe("anthropic")
-    const v = ctx.service.view()
-    expect(v.mainProvider.value).toBe("anthropic")
-    expect(v.mainProvider.source).toBe("user")
+    ctx.service.save({ klProvider: "anthropic", mainProvider: "anthropic" }, NOW)
+    expect(ctx.service.resolved().klProvider).toBe("openai")
+    expect(ctx.service.resolved().mainProvider).toBe("openai")
+    expect(ctx.service.view().klEffective.provider).toBe("openai")
     ctx.close()
   })
 
-  it("env 层可覆盖（MYCONTEXT_MODEL_PROVIDER）", () => {
-    const defaults = loadConfig({ env: { MYCONTEXT_MODEL_PROVIDER: "anthropic" } })
+  it("env MYCONTEXT_*_PROVIDER=anthropic 也强制 openai", () => {
+    const defaults = loadConfig({
+      env: {
+        MYCONTEXT_KL_PROVIDER: "anthropic",
+        MYCONTEXT_MODEL_PROVIDER: "anthropic",
+      },
+    })
     const ctx = makeService(defaults)
-    expect(ctx.service.resolved().mainProvider).toBe("anthropic")
-    expect(ctx.service.view().mainProvider.source).toBe("env")
+    expect(ctx.service.resolved().klProvider).toBe("openai")
+    expect(ctx.service.resolved().mainProvider).toBe("openai")
     ctx.close()
   })
 
-  it("★ save 后 seed 进 env 的 MYCONTEXT_MODEL_PROVIDER（子进程要读到）", () => {
+  it("seed 进 env 的 MYCONTEXT_MODEL_PROVIDER 恒为 openai", () => {
     const env: NodeJS.ProcessEnv = {}
     const ctx = makeService(loadConfig(), env)
     ctx.service.save({ mainProvider: "anthropic" }, NOW)
-    expect(env["MYCONTEXT_MODEL_PROVIDER"]).toBe("anthropic")
+    expect(env["MYCONTEXT_MODEL_PROVIDER"]).toBe("openai")
     ctx.close()
   })
 
-  it("主模型协议与知识库协议互不影响", () => {
-    const ctx = makeService()
-    ctx.service.save({ mainProvider: "anthropic" }, NOW)
-    // 只改主模型，知识库仍是默认 openai
-    expect(ctx.service.resolved().mainProvider).toBe("anthropic")
-    expect(ctx.service.resolved().klProvider).toBe("openai")
-    ctx.close()
+  it("历史存盘 anthropic 启动时迁移为 openai", () => {
+    const dir = mkdtempSync(join(tmpdir(), "mycontext-rc-"))
+    dirs.push(dir)
+    const handle = openStore({ path: join(dir, "control.sqlite") })
+    const settings = new SettingsRepository(handle.db)
+    settings.set(
+      "runtime_llm_config",
+      JSON.stringify({ mainProvider: "anthropic", klProvider: "anthropic" }),
+      NOW,
+    )
+    const service = new RuntimeConfigService({
+      settings,
+      logger: createLogger("test", { level: "error" }),
+      secretStore: memorySecretStore(),
+      defaults: loadConfig(),
+      env: {},
+    })
+    expect(service.resolved().mainProvider).toBe("openai")
+    expect(service.resolved().klProvider).toBe("openai")
+    const stored = JSON.parse(settings.get("runtime_llm_config") ?? "{}") as {
+      mainProvider?: string
+      klProvider?: string
+    }
+    expect(stored.mainProvider).toBe("openai")
+    expect(stored.klProvider).toBe("openai")
+    handle.close()
   })
 })
 

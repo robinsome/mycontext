@@ -216,7 +216,37 @@ def _timeout_value(timeout: float | None) -> float:
     return float(timeout)
 
 
-def _is_loopback_api_base(api_base: str) -> bool:
+def _is_private_or_loopback_host(host: str) -> bool:
+    """本机 / RFC1918 局域网：这些目标绝不能走系统 HTTP 代理。"""
+    h = (host or "").strip().lower()
+    if h in {"127.0.0.1", "localhost", "::1"}:
+        return True
+    # IPv6 unique-local / link-local
+    if h.startswith("fc") or h.startswith("fd") or h.startswith("fe80:"):
+        return True
+    parts = h.split(".")
+    if len(parts) != 4:
+        return False
+    try:
+        a, b, c, d = (int(x) for x in parts)
+    except ValueError:
+        return False
+    if not all(0 <= x <= 255 for x in (a, b, c, d)):
+        return False
+    # 10/8 · 172.16/12 · 192.168/16 · 169.254/16 · 127/8
+    if a == 10 or a == 127:
+        return True
+    if a == 192 and b == 168:
+        return True
+    if a == 172 and 16 <= b <= 31:
+        return True
+    if a == 169 and b == 254:
+        return True
+    return False
+
+
+def _should_bypass_system_proxy(api_base: str) -> bool:
+    """本机或局域网 LLM/embed 地址：禁用 httpx 读系统代理。"""
     raw = (api_base or "").strip()
     if raw == "":
         return False
@@ -226,19 +256,25 @@ def _is_loopback_api_base(api_base: str) -> bool:
         host = urlparse(raw if "://" in raw else f"http://{raw}").hostname or ""
     except Exception:  # noqa: BLE001
         return False
-    return host in {"127.0.0.1", "localhost", "::1"}
+    return _is_private_or_loopback_host(host)
+
+
+# 旧名保留：单测与历史注释仍可能引用
+_is_loopback_api_base = _should_bypass_system_proxy
 
 
 def _httpx_client(api_base: str, timeout: float, *, is_async: bool = False):
-    """Build httpx client; never route loopback LLM/embed via system proxy.
+    """Build httpx client; never route loopback/LAN LLM/embed via system proxy.
 
     macOS ``urllib.getproxies()`` often yields ``http://127.0.0.1:8080`` (Clash
     etc.). httpx ``trust_env=True`` (default) then proxies ``127.0.0.1:8020``
-    through it → empty HTTP 503 / ``ServiceUnavailableError('')``. urllib's
-    direct connect still works, which is why probes looked fine.
+    or ``192.168.x.x:8020`` through it → empty HTTP 503 /
+    ``ServiceUnavailableError('HTTP 503')``. Direct connect (``trust_env=False``)
+    still works, which is why curl / settings probes can look fine while kl
+    ingest fails.
     """
     kwargs: dict[str, Any] = {"timeout": timeout}
-    if _is_loopback_api_base(api_base):
+    if _should_bypass_system_proxy(api_base):
         kwargs["trust_env"] = False
     return httpx.AsyncClient(**kwargs) if is_async else httpx.Client(**kwargs)
 

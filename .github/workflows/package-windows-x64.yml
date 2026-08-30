@@ -5,8 +5,8 @@ on:
   push:
     branches:
       - main
-    tags:
-      - "v*"
+    # 发版 tag 走「Build and Release Desktop App」矩阵（含 windows-latest），
+    # 这里不再跟 tag，避免 Windows 打两遍。
 
 # dist:win 固定 `--dir`（交叉打包用）；CI 在 Windows 真机上再打
 # nsis/portable，与 mac 工作流显式打 dmg 同一思路。`--publish always`

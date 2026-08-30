@@ -3990,14 +3990,8 @@ export const runtimeConfigFieldSchema = z.object({
 })
 
 /**
- * 模型网关协议（OpenAI / Anthropic HTTP 传输）。
- *
- * · `openai` —— `/chat/completions`（LLM）/ `/embeddings`（向量），`Authorization: Bearer`；
- * · `anthropic` —— `/v1/messages`，`x-api-key` + `anthropic-version`。
- *
- * ★ 只有**知识库抽取**（kl-graph）这一路真能切协议 —— 它由 kl 侧 HTTP 客户端按 provider
- * 规整 base（anthropic 剥 `/v1`、openai 补一个 `/v1`）。主模型走 Agent 运行时，
- * 历史路径曾只能 openai 兼容；embedding 恒 openai。
+ * 模型网关协议。桌面端**只使用** `openai`（OpenAI 兼容 `/chat/completions`）。
+ * schema 仍保留 `anthropic` 以便读历史配置；运行时一律当作 openai。
  */
 export const modelProviderSchema = z.enum(["openai", "anthropic"])
 
@@ -4050,11 +4044,7 @@ export const runtimeConfigViewSchema = z.object({
   llmApiKey: runtimeConfigSecretFieldSchema,
   modelMain: runtimeConfigFieldSchema,
   /**
-   * 主模型访问网关用的协议（OpenAI / Anthropic HTTP 传输）。
-   *
-   * ★ 现在**可切**：Agent 运行时 / 直连 `LlmClient` 按它走
-   * `/v1/messages` 或 `/v1/chat/completions`。
-   * 有默认层（kernel 的 `MYCONTEXT_MODEL_PROVIDER`，默认 openai）。
+   * 主模型协议（固定 openai；桌面端已移除 Anthropic 接口）。
    */
   mainProvider: runtimeConfigProviderFieldSchema,
   embedModel: runtimeConfigFieldSchema,
@@ -4067,9 +4057,7 @@ export const runtimeConfigViewSchema = z.object({
   klLlmApiKey: runtimeConfigSecretFieldSchema,
   klModelMain: runtimeConfigFieldSchema,
   /**
-   * 知识库抽取用的协议。自成一格（不是 `runtimeConfigFieldSchema` 的自由串）——
-   * 它只有两个合法值。有默认层（kernel 的 `MYCONTEXT_KL_PROVIDER`，默认 openai），
-   * 所以 `source` 与其它字段同一套来源标记。
+   * 知识库抽取协议（固定 openai；桌面端已移除 Anthropic 接口）。
    */
   klProvider: runtimeConfigProviderFieldSchema,
   /** KL 回退解析后**实际生效**的三项（明文 base/model，key 只给 configured） */
@@ -4190,28 +4178,15 @@ export const runtimeConfigProbeSchema = z.object({
    */
   reason: z.enum(["unauthorized", "unreachable", "badResponse", "noKey"]).nullable(),
   /**
-   * **推荐/主**协议（成功时非 null）。UI 据此把协议 chip 自动选好。
-   *
-   * ★ 这是"建议默认选哪个"，**不是**"只支持这一个" —— 具体支持哪些看 `providers`。
-   * 取值优先 anthropic（若网关支持）：claude 类模型走原生 Anthropic 协议信息更全。
+   * 推荐/主协议（成功时非 null）。桌面端固定 openai。
    */
   provider: modelProviderSchema.nullable(),
   /**
-   * 网关**实际支持**的协议集合（成功时非空）。
-   *
-   * ★ 这条修的是"明明两种协议都支持却被报成 openai 单一"那个 bug：许多网关的
-   * `/v1/models` 会给每个模型标 `supported_endpoint_types`（如
-   * `["anthropic","openai"]`）。我们据此汇总出网关支持的协议全集，让两个协议
-   * chip 都能亮起来，而不是靠"用哪种头连通"猜一个。
-   *
-   * 网关不给 `supported_endpoint_types` 时（老网关）：回退到"能连通的那个协议"
-   * —— 至少不假装支持没验证过的那个。
+   * 网关支持的协议集合。桌面端只报告 openai。
    */
   providers: z.array(modelProviderSchema),
   /**
-   * 每个模型各自支持的协议（`模型 id → 协议集`）。UI 据此在"选了 anthropic 却挑了
-   * 一个只支持 openai 的模型"时当场警告 —— 与 model_not_found 那类静默失效同一个
-   * 防法。网关不给该字段的模型不出现在这里（UI 那时不妄断）。
+   * 每个模型各自支持的协议（`模型 id → 协议集`）。桌面端一律标 openai。
    */
   modelProviders: z.record(z.string(), z.array(modelProviderSchema)),
   /** 网关原文（截断）。放在折叠区里给会看的人，不直接怼到界面上 */

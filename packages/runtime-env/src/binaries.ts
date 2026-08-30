@@ -166,15 +166,48 @@ function findOnPath(exe: string, pathEnv: string | undefined): string | null {
 /**
  * workspace 依赖 `dingtalk-workspace-cli` 的 Node 启动器（`bin/dws.js`）。
  * 它会再 spawn 包内真正的平台二进制 —— 比自己解包 assets 更贴近官方安装路径。
+ *
+ * ★ 必须确认 `vendor/dws` 已落地。我们刻意不跑该包的 postinstall（会写家目录
+ * skill），于是 pnpm install 后常只有 `bin/dws.js`、没有 vendor —— 启动器一跑就
+ * 「dws binary not found … Reinstall」，onboarding 表现成「未检测到有效登录态」。
+ * 缺 vendor 时返回 null，让解析落到 `resources/bin` 的随包份（prepare:bin 保证能跑）。
  */
 function resolveDwsNpmLauncher(): string | null {
   try {
     const req = createRequire(import.meta.url)
     const pkgJson = req.resolve("dingtalk-workspace-cli/package.json")
-    const launcher = join(dirname(pkgJson), "bin", "dws.js")
+    const pkgRoot = dirname(pkgJson)
+    const vendorName = process.platform === "win32" ? "dws.exe" : "dws"
+    if (!isFile(join(pkgRoot, "vendor", vendorName))) return null
+    const launcher = join(pkgRoot, "bin", "dws.js")
     return isFile(launcher) ? launcher : null
   } catch {
     return null
+  }
+}
+
+/**
+ * PATH 上的 `dws` 是否真能用。
+ *
+ * pnpm 会把 `node_modules/.bin` 塞进 PATH；那里的 `dws` 是指向 `bin/dws.js` 的
+ * shim。缺 `vendor/dws` 时 shim「文件在」但一跑就失败 —— 若当作命中，
+ * 永远到不了随包 bundled。真实 Mach-O（~/.local/bin、resources/bin）直接过。
+ */
+function dwsPathLooksRunnable(binPath: string): boolean {
+  const normalized = binPath.replace(/\\/g, "/")
+  if (normalized.endsWith("/dws.js")) {
+    return isFile(join(dirname(binPath), "..", "vendor", process.platform === "win32" ? "dws.exe" : "dws"))
+  }
+  // pnpm/npm 把启动器挂在 …/.bin/dws；缺 vendor 时「文件在」但一跑就失败
+  if (!normalized.includes("/.bin/")) return true
+  try {
+    const req = createRequire(import.meta.url)
+    const pkgJson = req.resolve("dingtalk-workspace-cli/package.json")
+    return isFile(
+      join(dirname(pkgJson), "vendor", process.platform === "win32" ? "dws.exe" : "dws"),
+    )
+  } catch {
+    return false
   }
 }
 
@@ -312,7 +345,7 @@ export class RuntimeEnv {
       const env = this.options.env ?? process.env
       // PATH / 全局安装（官方：`npm install -g dingtalk-workspace-cli`）
       const fromPath = findOnPath(DWS_EXE, env["PATH"])
-      if (fromPath !== null) {
+      if (fromPath !== null && dwsPathLooksRunnable(fromPath)) {
         ensureExecutable(fromPath)
         return { name, path: fromPath, platform: platformSuffix(), source: "path" }
       }

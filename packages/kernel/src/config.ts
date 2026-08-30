@@ -86,12 +86,8 @@ const DEFINITIONS = {
   llmApiKey: { env: "MYCONTEXT_LLM_API_KEY", default: "", sensitive: true },
   modelMain: { env: "MYCONTEXT_MODEL_MAIN", default: "glm-5.2", sensitive: false },
   /**
-   * 主模型访问网关用的协议（OpenAI / Anthropic HTTP 传输）。
-   *
-   * ★ 默认 `openai`（OpenAI 兼容口，绝大多数网关都讲）。opencode 子进程与直连
-   * `LlmClient` 都按它切传输：anthropic → `/v1/messages`（`@ai-sdk/anthropic`），
-   * openai → `/v1/chat/completions`（`@ai-sdk/openai-compatible`）。
-   * 用户在设置里改，或用 `MYCONTEXT_MODEL_PROVIDER=anthropic` 覆盖。
+   * 主模型访问网关用的协议。桌面端固定 openai（OpenAI 兼容口）。
+   * `MYCONTEXT_MODEL_PROVIDER` 仍可读历史值，运行时会强制按 openai 使用。
    */
   modelProvider: { env: "MYCONTEXT_MODEL_PROVIDER", default: "openai", sensitive: false },
   embedModel: { env: "MYCONTEXT_EMBED_MODEL", default: "text-embedding-v4", sensitive: false },
@@ -126,14 +122,8 @@ const DEFINITIONS = {
   klLlmApiKey: { env: "MYCONTEXT_KL_LLM_API_KEY", default: "", sensitive: true },
   klModelMain: { env: "MYCONTEXT_KL_MODEL_MAIN", default: "", sensitive: false },
   /**
-   * KL 抽取访问网关用的协议（OpenAI / Anthropic HTTP 传输）。
-   *
-   * ★ 默认 `openai` —— 这是本项目与 kl-graph 自身默认（`anthropic`）**故意的分歧**：
-   * kl-graph 给上游用户保守默认成 anthropic，而 MyContext 随包/常见网关是 OpenAI 兼容
-   * 口（如 `…/compatible-mode/v1`）。桌面端不设这个值时，kl 会用它自己的默认 `anthropic`
-   * 去发 `/v1/messages` → 对 OpenAI 兼容网关 404（真实踩过的报错）。所以这里默认断言
-   * openai，并经 `KlGatewayConfig.llmProvider` → `KL_LLM_PROVIDER` 传给 kl；用户要走
-   * anthropic 网关时在设置里改，或用 `MYCONTEXT_KL_PROVIDER=anthropic` 覆盖。
+   * KL 抽取协议。桌面端固定 openai，经 `KlGatewayConfig.llmProvider` 传给 kl。
+   * 与 kl-graph 自身默认 anthropic 故意分歧，避免 OpenAI 兼容网关被发成 `/v1/messages`。
    */
   klProvider: { env: "MYCONTEXT_KL_PROVIDER", default: "openai", sensitive: false },
   /**

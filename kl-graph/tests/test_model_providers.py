@@ -20,10 +20,22 @@ def test_provider_model_adds_prefix_once() -> None:
 
 def test_provider_api_key_preserves_legacy_anthropic_env(monkeypatch) -> None:
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "legacy-key")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("MYCONTEXT_LLM_API_KEY", raising=False)
 
     assert provider_api_key("anthropic") == "legacy-key"
     assert provider_api_key("openai") is None
     assert provider_api_key("openai", "explicit-key") == "explicit-key"
+
+
+def test_provider_api_key_reads_openai_env(monkeypatch) -> None:
+    """openai 传输必须读 OPENAI_API_KEY，否则 Bearer 会退化成 not-needed。"""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
+    monkeypatch.delenv("MYCONTEXT_LLM_API_KEY", raising=False)
+    assert provider_api_key("openai") == "sk-openai"
+    monkeypatch.setenv("MYCONTEXT_LLM_API_KEY", "sk-fallback")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    assert provider_api_key("openai") == "sk-fallback"
 
 
 def test_litellm_base_url_appends_missing_v1() -> None:

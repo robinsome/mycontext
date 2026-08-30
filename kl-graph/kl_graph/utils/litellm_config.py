@@ -38,12 +38,24 @@ def provider_model(provider: str, model: str) -> str:
 
 
 def provider_api_key(provider: str, explicit: str | None = None) -> str | None:
-    """Resolve legacy Anthropic auth while letting other providers use the key env."""
+    """Resolve API key for the active transport.
+
+    · anthropic → ``ANTHROPIC_AUTH_TOKEN``
+    · openai（及其它）→ ``OPENAI_API_KEY`` / ``MYCONTEXT_LLM_API_KEY``
+
+    桌面端建图固定 openai，并把用户 key 写进 ``OPENAI_API_KEY``。旧实现这里对
+    openai 恒返回 None，http_llm 于是用 Bearer ``not-needed`` → 网关
+    ``Invalid token`` / ``ai_gateway_error``。
+    """
     if explicit:
         return explicit
     if provider.strip().lower() == "anthropic":
         return os.environ.get("ANTHROPIC_AUTH_TOKEN") or None
-    return None
+    return (
+        os.environ.get("OPENAI_API_KEY")
+        or os.environ.get("MYCONTEXT_LLM_API_KEY")
+        or None
+    )
 
 
 def litellm_base_url(provider: str, base_url: str) -> str:

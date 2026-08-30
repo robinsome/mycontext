@@ -141,6 +141,7 @@ export class RuntimeConfigService {
 
   constructor(private readonly options: RuntimeConfigServiceOptions) {
     this.adoptLegacyIfNeeded()
+    this.migrateAnthropicAway()
   }
 
   /** 探测用的 fetch（测试可注入）。 */
@@ -161,7 +162,8 @@ export class RuntimeConfigService {
     const llmBaseUrl = pick(stored.llmBaseUrl, d.llmBaseUrl)
     const llmApiKey = this.options.secretStore.read(LLM_API_KEY_SECRET) ?? d.llmApiKey
     const modelMain = pick(stored.modelMain, d.modelMain)
-    const mainProvider: ModelProvider = stored.mainProvider ?? d.modelProvider
+    // ★ 桌面端只走 OpenAI 兼容口；历史 anthropic / env 覆盖一律当作 openai。
+    const mainProvider: ModelProvider = "openai"
     const embedModel = pick(stored.embedModel, d.embedModel)
     const cursorApiKey =
       this.options.secretStore.read(CURSOR_API_KEY_SECRET) ??
@@ -176,12 +178,7 @@ export class RuntimeConfigService {
     const klBaseRaw = pick(stored.klLlmBaseUrl, d.klLlmBaseUrl)
     const klApiRaw = this.options.secretStore.read(KL_API_KEY_SECRET) ?? d.klLlmApiKey
     const klModelRaw = pick(stored.klModelMain, d.klModelMain)
-    /**
-     * ★ 协议独立于 base/model/key 的「回退主配置」逻辑：`用户存的 ?? 默认层`
-     * （kernel 默认 openai，见 config.ts 的长注释）。主模型与知识库各自一份，
-     * 两条子进程/直连路都按各自的 provider 切传输。
-     */
-    const klProvider: ModelProvider = stored.klProvider ?? d.klProvider
+    const klProvider: ModelProvider = "openai"
 
     return {
       llmBaseUrl,
@@ -249,8 +246,8 @@ export class RuntimeConfigService {
       llmApiKey: secret(LLM_API_KEY_SECRET, "llmApiKey"),
       modelMain: plain(stored.modelMain, "modelMain"),
       mainProvider: {
-        value: resolved.mainProvider,
-        source: stored.mainProvider !== undefined ? "user" : this.defaultSource("modelProvider"),
+        value: "openai",
+        source: "default",
       },
       embedModel: plain(stored.embedModel, "embedModel"),
       embedLlmBaseUrl: plain(stored.embedLlmBaseUrl, "embedLlmBaseUrl"),
@@ -270,9 +267,8 @@ export class RuntimeConfigService {
       klLlmApiKey: secret(KL_API_KEY_SECRET, "klLlmApiKey"),
       klModelMain: plain(stored.klModelMain, "klModelMain"),
       klProvider: {
-        value: resolved.klProvider,
-        // 存了就是用户覆盖，否则来源同其它默认层字段（env/dotenv/default）。
-        source: stored.klProvider !== undefined ? "user" : this.defaultSource("klProvider"),
+        value: "openai",
+        source: "default",
       },
       klEffective: {
         baseUrl: resolved.klBaseUrl,
@@ -397,10 +393,9 @@ export class RuntimeConfigService {
     if (patch.embedSendDimensions !== undefined) {
       stored.embedSendDimensions = patch.embedSendDimensions
     }
-    // 协议/落点是枚举而非自由串，不走 trim-and-delete 的 merge：undefined = 不改，
-    // 给了就覆盖（合法值由 contract 的 schema 保证）。
-    if (patch.mainProvider !== undefined) stored.mainProvider = patch.mainProvider
-    if (patch.klProvider !== undefined) stored.klProvider = patch.klProvider
+    // 协议固定 openai（Anthropic 接口已从桌面端移除）；落点是枚举，给了就覆盖。
+    if (patch.mainProvider !== undefined) stored.mainProvider = "openai"
+    if (patch.klProvider !== undefined) stored.klProvider = "openai"
     if (patch.cursorRuntime !== undefined) stored.cursorRuntime = patch.cursorRuntime
 
     this.options.settings.set(SETTING_KEY, JSON.stringify(stored), nowIso)
@@ -430,53 +425,12 @@ export class RuntimeConfigService {
   }
 
   /**
-   * 探测网关：`GET {base}/v1/models`。
-   *
-   * ## ★ 为什么要有这个动作
+   * 探测网关：`GET {base}/v1/models`（仅 OpenAI 兼容 Bearer）。
    *
    * 模型名/密钥填错**不会当场报错** —— 它在几小时后的蒸馏或建图里表现为
-   * `model_not_found` / 401，而那些错是静默的（日志一行，界面无声）。
-   * 这正是本项目最怕的失效形态。一次探测把它变成「现在当场告诉你」。
+   * `model_not_found` / 401，界面无声。探测把它变成当场反馈，并给出模型列表。
    *
-   * 同一次请求顺带给出**可选模型列表** —— 于是模型名可以从"猜着填"
-   * 变成"从列表里挑"。
-   *
-   * ## 用草稿值而不是已存配置
-   *
-   * 用户是在"还没保存"的状态下点测试的（先测通再存才是自然顺序）。
-   * `apiKey` 省略时回退到已存的那把 —— 「不改 key、只测地址」要能表达。
-   *
-   * 失败一律**归类**（见 contract 的 reason 枚举）而不是把原文怼给用户：
-   * 401 与 DNS 失败要给出的下一步动作完全不同。
-   */
-  /**
-   * 探测网关并**识别协议**：先试 OpenAI 兼容口，传输不对再试 Anthropic 口。
-   *
-   * ## ★ 为什么要有这个动作
-   *
-   * 模型名/密钥填错**不会当场报错** —— 它在几小时后的蒸馏或建图里表现为
-   * `model_not_found` / 401，而那些错是静默的（日志一行，界面无声）。
-   * 这正是本项目最怕的失效形态。一次探测把它变成「现在当场告诉你」。
-   *
-   * 同一次请求顺带给出**可选模型列表** + **识别到的协议** —— 于是模型名可以从
-   * "猜着填"变成"从列表里挑"，协议也不用用户去猜（同事踩过的坑：给了
-   * OpenAI 兼容 URL 却被当 Anthropic 发 → 404）。
-   *
-   * ## 为什么先 openai 后 anthropic
-   *
-   * 应用侧网关基本都是 OpenAI 兼容口（`/chat/completions`、`/embeddings`）。所以
-   * 先用 `Authorization: Bearer` 试 OpenAI 形态；只有当它以**传输不对**的信号
-   * （404 / 非 401·403 的 4xx）失败时，才换 `x-api-key` + `anthropic-version`
-   * 头再试一次 Anthropic 口。401/403 是「地址对、密钥不对」，不该触发换协议重试。
-   * 网络层失败（超时/DNS/拒连）两种协议都会一样失败，所以不重试，直接 unreachable。
-   *
-   * ## 用草稿值而不是已存配置
-   *
-   * 用户是在"还没保存"的状态下点测试的（先测通再存才是自然顺序）。
-   * `apiKey` 省略时回退到已存的那把 —— 「不改 key、只测地址」要能表达。
-   *
-   * 失败一律**归类**（见 contract 的 reason 枚举）而不是把原文怼给用户：
-   * 401 与 DNS 失败要给出的下一步动作完全不同。
+   * 用草稿值而不是已存配置（先测通再存）。失败归类见 contract 的 reason 枚举。
    */
   async probe(input: {
     baseUrl?: string | undefined
@@ -512,7 +466,6 @@ export class RuntimeConfigService {
     const url = `${root}/v1/models`
 
     try {
-      // ── 第 1 试：OpenAI 兼容口 ──
       const openai = await this.fetchImpl(url, {
         headers: { Authorization: `Bearer ${key}` },
         // 8 秒：探测是用户**在等**的动作，不能像后台请求那样给 90 秒
@@ -520,7 +473,7 @@ export class RuntimeConfigService {
       })
 
       if (openai.ok) {
-        const parsed = await this.parseModels(openai, "openai")
+        const parsed = await this.parseModels(openai)
         if (parsed !== null) {
           this.options.logger.info("gateway probe ok", {
             providers: parsed.providers,
@@ -533,7 +486,6 @@ export class RuntimeConfigService {
         return this.probeFail("badResponse", null)
       }
 
-      // 401/403 = 地址对、密钥不对：换协议也没用，直接归类。
       if (openai.status === 401 || openai.status === 403) {
         const detail = (await openai.text().catch(() => "")).slice(0, 300)
         this.options.logger.info("gateway probe failed", {
@@ -543,32 +495,10 @@ export class RuntimeConfigService {
         return this.probeFail("unauthorized", detail === "" ? null : detail)
       }
 
-      // ── 第 2 试：Anthropic 口（仅在 OpenAI 口报「传输不对」信号时）──
-      const anthropic = await this.fetchImpl(url, {
-        headers: { "x-api-key": key, "anthropic-version": "2023-06-01" },
-        signal: AbortSignal.timeout(8_000),
-      })
-
-      if (anthropic.ok) {
-        const parsed = await this.parseModels(anthropic, "anthropic")
-        if (parsed !== null) {
-          this.options.logger.info("gateway probe ok", {
-            providers: parsed.providers,
-            provider: parsed.provider,
-            models: parsed.models.length,
-          })
-          return { ok: true, reason: null, ...parsed, detail: null }
-        }
-        return this.probeFail("badResponse", null)
-      }
-
-      // 两种口都没通：按 Anthropic 口的状态归类（401/403 → 密钥问题，其余 → 地址不像模型服务）。
-      const detail = (await anthropic.text().catch(() => "")).slice(0, 300)
-      const reason =
-        anthropic.status === 401 || anthropic.status === 403 ? "unauthorized" : "badResponse"
+      const detail = (await openai.text().catch(() => "")).slice(0, 300)
+      const reason = "badResponse"
       this.options.logger.info("gateway probe failed", {
         openaiStatus: openai.status,
-        anthropicStatus: anthropic.status,
         reason,
       })
       return this.probeFail(reason, detail === "" ? null : detail)
@@ -597,28 +527,9 @@ export class RuntimeConfigService {
   }
 
   /**
-   * 从 `/v1/models` 响应体解析出 `{provider, providers, modelProviders, models}`。
-   * 形状不对返回 null。
-   *
-   * ## ★★ 协议识别以 `supported_endpoint_types` 为准，不靠信封形状猜
-   *
-   * 之前这里只看响应信封是 OpenAI 形（`{data:[{id}]}`）还是 Anthropic 形
-   * （`{data:[{type:"model"}]}`）来定一个协议 —— 但很多网关（如本机 mulerun）
-   * 的 `/v1/models` 会**逐模型**标 `supported_endpoint_types`，多数 claude/glm/kimi
-   * 都是 `["anthropic","openai"]` 两者都支持。只看信封会把这种网关一律报成
-   * "openai 单一"，于是 anthropic chip 永远点不亮 —— 那正是本次要修的 bug。
-   *
-   * 所以：优先聚合每个模型的 `supported_endpoint_types`（只认我们支持的
-   * anthropic/openai 两种）得到网关支持的协议全集；网关不给这个字段时（老网关）
-   * 才回退到 `viaHeader`（能用哪种头连通就至少支持那个），不假装支持没验证过的。
-   *
-   * `provider`（推荐默认）：网关支持 anthropic 就优先 anthropic（claude 类走原生
-   * 协议信息更全），否则 openai。
+   * 从 `/v1/models` 响应体解析模型列表。桌面端只认 OpenAI 兼容协议。
    */
-  private async parseModels(
-    response: Response,
-    viaHeader: ModelProvider,
-  ): Promise<{
+  private async parseModels(response: Response): Promise<{
     provider: ModelProvider
     providers: ModelProvider[]
     modelProviders: Record<string, ModelProvider[]>
@@ -628,26 +539,6 @@ export class RuntimeConfigService {
     if (body === null || !Array.isArray(body.data)) return null
 
     const items = body.data as unknown[]
-    const modelProviders: Record<string, ModelProvider[]> = {}
-    const gatewayProviders = new Set<ModelProvider>()
-
-    for (const item of items) {
-      if (typeof item !== "object" || item === null) continue
-      const id = (item as { id?: unknown }).id
-      if (typeof id !== "string") continue
-      const rawTypes = (item as { supported_endpoint_types?: unknown }).supported_endpoint_types
-      if (Array.isArray(rawTypes)) {
-        // 只留我们支持的两种协议（网关可能还标 gemini/image-generation 等，忽略）。
-        const supported = rawTypes.filter(
-          (t): t is ModelProvider => t === "anthropic" || t === "openai",
-        )
-        if (supported.length > 0) {
-          modelProviders[id] = supported
-          for (const p of supported) gatewayProviders.add(p)
-        }
-      }
-    }
-
     const models = items
       .map((item) =>
         typeof item === "object" &&
@@ -659,14 +550,15 @@ export class RuntimeConfigService {
       .filter((id): id is string => id !== null)
       .sort((a, b) => a.localeCompare(b))
 
-    // 网关没给 supported_endpoint_types（老网关）→ 回退到连通的那个协议。
-    if (gatewayProviders.size === 0) gatewayProviders.add(viaHeader)
+    const modelProviders: Record<string, ModelProvider[]> = {}
+    for (const id of models) modelProviders[id] = ["openai"]
 
-    const providers = [...gatewayProviders].sort()
-    // 推荐默认：支持 anthropic 就优先它（原生协议信息更全），否则 openai。
-    const provider: ModelProvider = gatewayProviders.has("anthropic") ? "anthropic" : "openai"
-
-    return { provider, providers, modelProviders, models }
+    return {
+      provider: "openai",
+      providers: ["openai"],
+      modelProviders,
+      models,
+    }
   }
 
   /**
@@ -759,6 +651,25 @@ export class RuntimeConfigService {
   private defaultSource(key: keyof LoadedConfig["values"]): FieldSource {
     const meta = this.options.defaults.meta[key as keyof LoadedConfig["meta"]]
     return (meta?.source ?? "default") as FieldSource
+  }
+
+  /**
+   * 历史配置若存了 anthropic，一次性改写成 openai（桌面端已移除 Anthropic 接口）。
+   */
+  private migrateAnthropicAway(): void {
+    const stored = this.readStored()
+    let dirty = false
+    if (stored.mainProvider === "anthropic") {
+      stored.mainProvider = "openai"
+      dirty = true
+    }
+    if (stored.klProvider === "anthropic") {
+      stored.klProvider = "openai"
+      dirty = true
+    }
+    if (!dirty) return
+    this.options.settings.set(SETTING_KEY, JSON.stringify(stored), new Date().toISOString())
+    this.options.logger.info("migrated stored anthropic provider to openai", {})
   }
 
   /**
