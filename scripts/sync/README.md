@@ -5,32 +5,33 @@ Win / mac 用户**不安装 MyContext agent**，只装官方渠道 CLI（`dws`�
 
 ## 安装 dws
 
-### macOS / Linux
+sync 脚本与渠道 CLI **v1.0.60** 对齐。从下列发行页下载**匹配本机平台**的资产，用同页 `checksums.txt` 校验 sha256 后，将 `dws` 加入 `PATH`：
 
-1. 从 [dingtalk-workspace-cli 发行页](https://github.com/open-dingtalk/dingtalk-workspace-cli/releases)
-   下载对应平台的压缩包，解压后将 `dws` 放到 `PATH` 目录（例如 `~/.local/bin`）。
-2. 或用 npm 全局安装（包名 `dingtalk-workspace-cli`，可执行文件名为 `dws`）：
+**发行页：** https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli/releases/tag/v1.0.60
 
-   ```bash
-   npm install -g dingtalk-workspace-cli
-   ```
+| 平台 | 资产文件名 |
+| --- | --- |
+| macOS Apple Silicon | `dws-darwin-arm64.tar.gz` |
+| macOS Intel | `dws-darwin-amd64.tar.gz` |
+| Windows x64 | `dws-windows-amd64.zip` |
+| Windows ARM64 | `dws-windows-arm64.zip` |
 
-3. 验证：
+1. 下载上表对应资产并解压。
+2. 对照发行页 `checksums.txt` 验证 sha256（mac/Linux 可用 `shasum -a 256 -c checksums.txt`；Windows 用等价工具）。
+3. 将 `dws`（Windows 为 `dws.exe`）移到已在 `PATH` 中的目录。
+4. 执行 `dws --help` 确认可用。
 
-   ```bash
-   dws --help
-   ```
+也可通过 npm 全局安装（**钉版本**）：
 
-### Windows
+```bash
+npm install -g dingtalk-workspace-cli@1.0.60
+```
 
-1. 从上述发行页下载 Windows 版，解压后将目录加入系统 `PATH`。
-2. 或在 PowerShell 中：
+PowerShell 中同样使用 `@1.0.60`。
 
-   ```powershell
-   npm install -g dingtalk-workspace-cli
-   ```
+### Windows 推送脚本
 
-3. 新开终端执行 `dws --help` 确认可用。
+`push-dws-export.ps1` 与 bash 版逻辑对称，**尚未在 Windows 主机上实测**。在 Win 上使用前请自行跑 `-Fixture` 烟测；本仓库 CI 仅在 mac/Linux 上验证 `.sh`。
 
 ## 登录（live 模式）
 
