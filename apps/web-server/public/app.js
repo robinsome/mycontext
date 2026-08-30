@@ -24,20 +24,20 @@ if (
 const savedVault = sessionStorage.getItem(VAULT_KEY)
 if (savedVault !== null) vaultInput.value = savedVault
 
-function getToken(): string | null {
+function getToken() {
   const fromSession = sessionStorage.getItem(TOKEN_KEY)
   if (fromSession !== null && fromSession !== "") return fromSession
   const typed = tokenInput.value.trim()
   return typed === "" ? null : typed
 }
 
-function authHeaders(): HeadersInit {
+function authHeaders() {
   const token = getToken()
   if (token === null) throw new Error("请先填写并保存 Sync Token")
   return { authorization: `Bearer ${token}` }
 }
 
-async function fetchStatus(): Promise<void> {
+async function fetchStatus() {
   const vaultId = vaultInput.value.trim()
   if (vaultId === "") {
     statusOutput.textContent = "请填写 Vault ID"
@@ -56,7 +56,7 @@ async function fetchStatus(): Promise<void> {
   }
 }
 
-function saveSettings(): void {
+function saveSettings() {
   const token = tokenInput.value.trim()
   const vaultId = vaultInput.value.trim()
   if (token !== "") sessionStorage.setItem(TOKEN_KEY, token)
@@ -66,7 +66,7 @@ function saveSettings(): void {
   void fetchStatus()
 }
 
-async function rotateToken(): Promise<void> {
+async function rotateToken() {
   rotateResult.classList.remove("hidden", "error")
   rotateResult.textContent = "轮换中…"
   try {
