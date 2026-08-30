@@ -123,6 +123,18 @@ export {
 } from "./plugins/dingtalk/cli.js"
 export type { DwsCliOptions, DwsCommandResult } from "./plugins/dingtalk/cli.js"
 
+export {
+  OPENAPI_CAPABILITY_MATRIX,
+  dwsCommandKey,
+  matrixRowForCommand,
+} from "./plugins/dingtalk/openapi-capability-matrix.js"
+export type {
+  OpenApiAuthKind,
+  OpenApiCapabilityStatus,
+  OpenApiEndpoint,
+  OpenApiCapabilityRow,
+} from "./plugins/dingtalk/openapi-capability-matrix.js"
+
 export { seedChannelProfile } from "./plugins/dingtalk/profile-seed.js"
 export type { ChannelProfileSeed } from "./plugins/dingtalk/profile-seed.js"
 
