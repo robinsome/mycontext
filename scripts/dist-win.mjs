@@ -10,8 +10,13 @@
  *      （node-gyp **不能**交叉编译；没有预编译就硬失败）
  *   5. electron-vite build
  *   6. electron-builder --win --dir（npmRebuild=false，避免再触发 gyp）
- *   7. 还原本机 better-sqlite3 .node（别把 win 的 .node 留给接下来的 mac 开发）
+ *   7. **仅交叉编译宿主**还原本机 better-sqlite3 .node
+ *      （别把 win 的 .node 留给接下来的 mac/linux 开发）
  *
+ * ★ Windows 真机上**不要**还原：CI 在 dist:win 之后还会再打 nsis/portable，
+ *   那一步重新从 node_modules 打包。若还原成 Node ABI，安装包就会带上
+ *   NODE_MODULE_VERSION 127，Electron（148）启动时报 ABI 不匹配
+ *   （v0.1.1 Release 实测）。
  * ★ 本机验不了 PE：Python / 二进制的「真能跑」留给 Windows 真机或 CI。
  * ★ 无 Wine 时 electron-builder 关了 signAndEditExecutable（见 yml）。
  */
@@ -191,14 +196,25 @@ function swapBetterSqlite3WinNode() {
   )
   rmSync(staging, { recursive: true, force: true })
 
-  return () => {
-    if (backupNode !== null && existsSync(backupNode)) {
-      copyFileSync(backupNode, nodePath)
-      rmSync(dirname(backupNode), { recursive: true, force: true })
-      console.log("  已还原本机 better-sqlite3.node")
-      return
-    }
-    console.log("  （无备份可还原）")
+  return {
+    restore() {
+      if (backupNode !== null && existsSync(backupNode)) {
+        copyFileSync(backupNode, nodePath)
+        rmSync(dirname(backupNode), { recursive: true, force: true })
+        console.log("  已还原本机 better-sqlite3.node")
+        return
+      }
+      console.log("  （无备份可还原）")
+    },
+    /** 丢掉备份、保留当前（Electron ABI）的 .node */
+    discard() {
+      if (backupNode !== null && existsSync(backupNode)) {
+        rmSync(dirname(backupNode), { recursive: true, force: true })
+      }
+      console.log(
+        "  Windows 宿主：保留 Electron ABI 的 better-sqlite3.node（不还原，供后续 nsis/portable）",
+      )
+    },
   }
 }
 
@@ -241,9 +257,14 @@ try {
   exitCode = err instanceof Error && "exitCode" in err ? Number(err.exitCode) || 1 : 1
 } finally {
   try {
-    restoreNative()
+    // 交叉编译才还原；Windows 真机保留 Electron ABI，见文件头注释。
+    if (process.platform === "win32") {
+      restoreNative.discard()
+    } else {
+      restoreNative.restore()
+    }
   } catch (restoreErr) {
-    console.error("✗ 还原 better-sqlite3.node 失败——请手动 pnpm native:electron", restoreErr)
+    console.error("✗ 处理 better-sqlite3.node 备份失败——请手动 pnpm native:electron", restoreErr)
     exitCode = 1
   }
 }

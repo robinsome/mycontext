@@ -68,7 +68,7 @@ jobs:
         if: runner.os == 'macOS'
         run: pnpm run build:app
 
-      # Windows：先产出 win-unpacked（含 win better-sqlite3 换装）。
+      # Windows：先产出 win-unpacked（含 win better-sqlite3 换装；Windows 上不还原 Node ABI）。
       - name: Build Windows x64 unpacked
         if: runner.os == 'Windows'
         run: pnpm dist:win
@@ -86,6 +86,11 @@ jobs:
           --mac dmg --arm64
           --publish always
           --config apps/desktop/electron-builder.yml
+
+      # nsis/portable 会再从 node_modules 打包 .node；ABI 必须仍是 Electron。
+      - name: Assert better-sqlite3 Electron ABI
+        if: runner.os == 'Windows'
+        run: node scripts/assert-better-sqlite3-electron.mjs
 
       # Windows 专用 yml 打 nsis/portable；npmRebuild 写在 yml 里
       #（PowerShell 会拆坏 -c.npmRebuild=false）。

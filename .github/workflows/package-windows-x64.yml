@@ -54,9 +54,13 @@ jobs:
       - name: Prepare Windows Python runtime
         run: pnpm setup:python
 
-      # 先产出 win-unpacked（含 win better-sqlite3 换装）。
+      # 先产出 win-unpacked（含 win better-sqlite3 换装；Windows 上不还原 Node ABI）。
       - name: Build Windows x64 unpacked
         run: pnpm dist:win
+
+      # nsis/portable 会再从 node_modules 打包 .node；ABI 必须仍是 Electron。
+      - name: Assert better-sqlite3 Electron ABI
+        run: node scripts/assert-better-sqlite3-electron.mjs
 
       # 再用 windows 专用 yml 打可下载安装包，并写入 GitHub Release。
       # 不用 -c.npmRebuild=false：PowerShell 会把它拆成 -c + .npmRebuild=false
