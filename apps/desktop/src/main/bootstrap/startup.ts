@@ -42,7 +42,6 @@ import {
   type ResolvedEmbedGateway,
 } from "@mycontext/runtime-env"
 import { LlmHolder } from "@mycontext/llm"
-import { DEFAULT_CURSOR_MODEL } from "@mycontext/agent-runtime"
 import { IPC_EVENTS } from "@mycontext/ipc-contract"
 import type { KlGraphOverview, KlServerStatus } from "@mycontext/ipc-contract"
 import { bootstrapConfig } from "./config.js"
@@ -408,22 +407,6 @@ export function bootstrapApp(mainDir: string): AppContext {
     defaults: config,
   })
   runtimeConfig.seedProcessEnv()
-  // 同步采纳已有 SDK auth；若仍空则异步用本机 cursor-agent 登录铸造。
-  if (runtimeConfig.adoptLocalCursorAuthSync()) {
-    logger.info("cursor agent credential adopted from ~/.cursor/sdk/auth.json")
-  }
-  void runtimeConfig
-    .ensureCliCursorAuth()
-    .then((cred) => {
-      if (cred.source === "cli-login") {
-        logger.info("cursor agent credential minted from local cursor-agent CLI login")
-      }
-    })
-    .catch((error: unknown) => {
-      logger.warn("cursor CLI auth bridge failed; Agent Key stays unset", {
-        error: error instanceof Error ? error.message : String(error),
-      })
-    })
 
   /**
    * 高级 AI 配置：落 control 库（应用级）而不是 vault。
@@ -1224,9 +1207,6 @@ export function bootstrapApp(mainDir: string): AppContext {
      */
     getModel: () => runtimeConfig.resolved().modelMain,
     getProvider: () => runtimeConfig.resolved().mainProvider,
-    getCursorApiKey: () => runtimeConfig.resolved().cursorApiKey,
-    getCursorModel: () => DEFAULT_CURSOR_MODEL,
-    getCursorRuntime: () => runtimeConfig.resolved().cursorRuntime,
     getWindow: () => window,
     /**
      * 授权用的 CLI。
@@ -1351,14 +1331,7 @@ export function bootstrapApp(mainDir: string): AppContext {
      * 与 KlServerService 共用同一份准备逻辑，幂等 —— 就绪时不做任何事。
      */
     getPythonEnv: () => ensurePythonEnv(paths.klRoot, logger.child("Python")),
-    /**
-     * ★ 搜索 Agent 用 Cursor 订阅默认模型；网关 `modelMain` 只给
-     * OpenAI 兼容 Fallback（无 Agent Key / CLI 时）。
-     */
-    getCursorModel: () => DEFAULT_CURSOR_MODEL,
     getProvider: () => runtimeConfig.resolved().mainProvider,
-    getCursorApiKey: () => runtimeConfig.resolved().cursorApiKey,
-    getCursorRuntime: () => runtimeConfig.resolved().cursorRuntime,
     llmProvider: llmHolder,
     getWindow: () => window,
   })

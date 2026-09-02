@@ -84,7 +84,6 @@ import {
 import { parseScopedChannelId } from "@mycontext/channels"
 import type { MediaRunner } from "@mycontext/channels"
 import type { ProcessRunner, RuntimeEnv } from "@mycontext/runtime-env"
-import { PersonaAcp } from "./persona-acp.js"
 import { PersonaComposer } from "./persona-compose.js"
 import { PersonaDelivery } from "./persona-delivery.js"
 import { PersonaMemory, type MemorySource } from "./persona-memory.js"
@@ -249,12 +248,6 @@ export interface PersonaServiceOptions {
    */
   getModel?: () => string
   getProvider?: () => string
-  getCursorApiKey?: () => string
-  /**
-   * Cursor 订阅模型。缺省 `composer-2.5`。不要把网关 embedding 模型名塞进来。
-   */
-  getCursorModel?: () => string
-  getCursorRuntime?: () => "local" | "cloud"
   getWindow: () => BrowserWindow | null
   /**
    * 合并窗口。只在测试里传（要用假时钟压缩等待），生产用缺省值。
@@ -489,15 +482,6 @@ export class PersonaService {
    * 有持久化的 `dh_run_trace` 接手（草稿卡上的"看生成过程"）。
    */
   private readonly liveTraces = new Map<string, { items: PersonaTraceItem[]; done: boolean }>()
-  /**
-   * opencode 编排。null = 没接（未配置 runtime/processes）→ 全部走直连。
-   *
-   * ★ 可选注入而不是必需：`PersonaAcp` 要 `RuntimeEnv` 与 `ProcessRunner`，
-   * 而单测里那两样都是假的。不给它时 `PersonaComposer.compose` 直接走 LlmClient ——
-   * 也就是这一整块的降级路径，而那条路本来就必须始终可用
-   * （opencode 102MB 不随包分发，"没装"是常态而非异常）。
-   */
-  private readonly acp: PersonaAcp | null
 
   /** 蒸馏产物目录，随 vault 变（见 attach）。null = 还没蒸馏过 / 未登录。 */
   private forgeSkillRoot: string | null = null
@@ -521,62 +505,6 @@ export class PersonaService {
       logger: options.logger.child("Memory"),
       source: options.graph ?? null,
     })
-    /**
-     * opencode 编排只在**装配层给足了 runtime/processes** 时才建。
-     *
-     * 不给 = 全部走 LlmClient 直连（单测走这条，生产在 opencode 缺失时
-     * 由 `PersonaAcp.turn` 返回 null 自己降级）。两档分开的理由：
-     * 单测不该为了跑一条草稿逻辑去假造一个进程运行时。
-     */
-    this.acp =
-      options.runtime === undefined || options.processes === undefined
-        ? null
-        : new PersonaAcp({
-            clock: options.clock,
-            logger: options.logger.child("Acp"),
-            runtime: options.runtime,
-            processes: options.processes,
-            // ★ 回调：vault 跟着登录挂，构造这一刻还没有（见 PersonaAcpOptions.dirs）
-            dirs: () => this.dirs,
-            klRoot: options.klRoot ?? "",
-            klPort: options.klPort ?? 0,
-            /**
-             * ★ 透传激活后的 Python 环境 —— agent 能不能用 kl skill 全看这个
-             * （见 `PersonaAcpOptions.getPythonEnv` 上方那段实测记录）。
-             * 单测不给：那条路不起真进程。
-             */
-            ...(options.getPythonEnv === undefined ? {} : { getPythonEnv: options.getPythonEnv }),
-            /**
-             * ★ 用回调，不是数组。
-             *
-             * `forgeSkillRoot` 在 attach() 时才定 —— 构造时锁死一次会让"没蒸馏
-             * 之前建的 PersonaAcp 永远看不到 forge 目录"。回调让 startAgent
-             * 每次真起 opencode 时现读；蒸馏一发布，下次 turn 就用上。
-             */
-            getSkillPaths: () => this.personaSkillPaths(),
-            /**
-             * Cursor Agent 模型 —— 与网关 `getModel`（直连 Fallback）分开。
-             */
-            ...(options.getCursorModel === undefined
-              ? {}
-              : { getCursorModel: options.getCursorModel }),
-            ...(options.getProvider === undefined ? {} : { getProvider: options.getProvider }),
-            ...(options.getCursorApiKey === undefined
-              ? {}
-              : { getCursorApiKey: options.getCursorApiKey }),
-            ...(options.getCursorRuntime === undefined
-              ? {}
-              : { getCursorRuntime: options.getCursorRuntime }),
-            /**
-             * agent 的过程（thinking / 正文 / tool 调用）—— 两个去处：
-             * ① 实时推给 UI（「正在处理」那个 tab 里滚动显示）；
-             * ② 轮末落 `dh_run_trace`（草稿卡上"看生成过程"回看）。
-             *
-             * 只在这里接线，`PersonaAcp` 自己不碰 db / window（照
-             * `getSkillPaths` 那种注入法）。
-             */
-            onTrace: (trace) => this.onAgentTrace(trace),
-          })
   }
 
   /**
@@ -867,7 +795,7 @@ export class PersonaService {
    */
   degradedReason(): string | null {
     if (this.options.llmProvider.get() === null) return "llm_not_configured"
-    return this.acp?.degradedReason() ?? null
+    return null
   }
 
   snapshot(): PersonaSnapshot {
@@ -1790,7 +1718,7 @@ export class PersonaService {
      * 不确定 —— 而不是编一个答案。反过来（真有 kl 却说没有）才是我们
      * 刚修掉的那个错误。
      */
-    const tools = this.acp?.available() === true ? "agent" : "recall_only"
+    const tools = "recall_only"
 
     const entry = renderEntry(
       {
@@ -2315,7 +2243,6 @@ export class PersonaService {
       clock: this.options.clock,
       logger: this.options.logger.child("Compose"),
       llmProvider: this.options.llmProvider,
-      acp: this.acp,
       memory: this.memory,
       ...(this.options.getSelfNames === undefined
         ? {}

@@ -1,5 +1,5 @@
 /**
- * 降级横幅说的是**真实原因**（Agent Key / LLM），不是「模型配没配」的代称。
+ * 降级横幅说的是**真实原因**（LLM 未配置），不是误导性代称。
  */
 import { describe, expect, it } from "vitest"
 import { ManualClock, createLogger } from "@mycontext/kernel"
@@ -24,7 +24,7 @@ function workingLlm(): LlmClient {
   })
 }
 
-function makeService(options: { llm: LlmClient | null; agentKey: boolean }) {
+function makeService(options: { llm: LlmClient | null }) {
   return new PersonaService({
     clock: new ManualClock(NOW),
     logger,
@@ -32,63 +32,32 @@ function makeService(options: { llm: LlmClient | null; agentKey: boolean }) {
     getWindow: () => null,
     runtime: {} as RuntimeEnv,
     processes: {} as ProcessRunner,
-    getCursorApiKey: () => (options.agentKey ? "sk-test" : ""),
-    getCursorRuntime: () => "local",
   })
 }
 
-describe("★★ snapshot 报的是真实降级原因，不是「LLM 配没配」的代称", () => {
-  it("★★ 模型配好了但无 Agent Key → cursor_api_key_missing", () => {
-    const service = makeService({ llm: workingLlm(), agentKey: false })
-    expect(service.degradedReason()).toBe("cursor_api_key_missing")
-  })
-
-  it("★ 模型没配时它优先 —— 那是更根本的一层", () => {
-    const service = makeService({ llm: null, agentKey: false })
+describe("★ snapshot 报的是真实降级原因", () => {
+  it("模型没配 → llm_not_configured", () => {
+    const service = makeService({ llm: null })
     expect(service.degradedReason()).toBe("llm_not_configured")
   })
 
-  it("★ 两侧都就绪 → null（横幅不显示）", () => {
-    const service = makeService({ llm: workingLlm(), agentKey: true })
+  it("模型配好 → null（横幅不显示）", () => {
+    const service = makeService({ llm: workingLlm() })
     expect(service.degradedReason()).toBeNull()
   })
 
-  it("★★ snapshot 把它带出去", () => {
-    const service = makeService({ llm: workingLlm(), agentKey: false })
+  it("snapshot 把它带出去", () => {
+    const service = makeService({ llm: null })
     const snapshot = service.snapshot()
-    expect(snapshot.agentAvailable).toBe(true)
-    expect(snapshot.degradedReason).toBe("cursor_api_key_missing")
+    expect(snapshot.agentAvailable).toBe(false)
+    expect(snapshot.degradedReason).toBe("llm_not_configured")
   })
 })
 
-describe("★★ 每个原因有自己的文案，且**不**回退到关于模型的那句", () => {
+describe("★ 文案映射", () => {
   const t = (key: string): string => key
 
-  it("★★ agent 相关原因都不指向「去配模型」", () => {
-    for (const reason of [
-      "cursor_api_key_missing",
-      "opencode_missing",
-      "opencode_version_unreadable",
-      "opencode_too_old:1.1.0<1.2.23",
-    ]) {
-      const text = explainDegradedReason(reason, t)
-      expect(text).not.toBe("degradedReasons.llmNotConfigured")
-    }
-  })
-
-  it("cursor_api_key_missing → agentKeyMissing", () => {
-    expect(explainDegradedReason("cursor_api_key_missing", t)).toBe(
-      "degradedReasons.agentKeyMissing",
-    )
-  })
-
-  it("历史 opencode_* 码 → 同样落到 Agent Key 文案（不再暗示装二进制）", () => {
-    expect(explainDegradedReason("opencode_missing", t)).toBe("degradedReasons.agentKeyMissing")
-    expect(explainDegradedReason("opencode_version_unreadable", t)).toBe(
-      "degradedReasons.agentKeyMissing",
-    )
-    expect(explainDegradedReason("opencode_too_old:1.1.0<1.2.23", t)).toBe(
-      "degradedReasons.agentKeyMissing",
-    )
+  it("llm_not_configured → llmNotConfigured", () => {
+    expect(explainDegradedReason("llm_not_configured", t)).toBe("degradedReasons.llmNotConfigured")
   })
 })

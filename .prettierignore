@@ -11,6 +11,8 @@ pnpm-lock.yaml
 # 而显式 glob 到 `.py` 还会报「No parser could be inferred」——整目录排除，不逐文件修。
 kl-graph/
 vendor/
+.worktrees
+**/.worktrees/**
 
 # 从 kl-graph/ 同步过来的产物：内容仍归他人所有，格式化会让 check:kl-skill-sync 永远红
 apps/desktop/resources/skills/

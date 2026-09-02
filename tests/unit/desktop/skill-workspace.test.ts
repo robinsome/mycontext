@@ -1,16 +1,11 @@
 /**
  * ★ kl skill 资源目录仍由 SearchService 接收；建会话不再 cpSync 副本。
- *
- * Cursor Agent 路径不再写 `OPENCODE_CONFIG_CONTENT` —— skill 发现改由
- * workspace / 宿主约定（cwd + PATH 上的 `kl`）。本文件锁两件事：
- * ① 不 cpSync 进 cwd；② 有 Agent Key 时 CursorSession 的 cwd 落在会话目录。
  */
 import { mkdtempSync, rmSync, existsSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import { createLogger, ManualClock } from "@mycontext/kernel"
-import type { CursorSession, CursorSessionOptions } from "@mycontext/agent-runtime"
 import type { ProcessRunner, RuntimeEnv } from "@mycontext/runtime-env"
 import { SearchService } from "@main/services/search.service.js"
 import { openTestVault } from "../../helpers/vault.js"
@@ -33,13 +28,7 @@ function tempDir(): string {
   return dir
 }
 
-function makeService(
-  options: {
-    skillsDir?: string
-    agentKey?: boolean
-    onCreateSession?: (opts: CursorSessionOptions) => void
-  } = {},
-) {
+function makeService(options: { skillsDir?: string } = {}) {
   const vault = openTestVault()
   const workspaceRoot = tempDir()
   const service = new SearchService({
@@ -52,21 +41,6 @@ function makeService(
     klPort: 8200,
     primaryChannelId: "dingtalk",
     getWindow: () => null,
-    getCursorApiKey: () => (options.agentKey === false ? "" : "sk-test"),
-    getCursorRuntime: () => "local",
-    createCursorSession: (opts) => {
-      options.onCreateSession?.(opts)
-      return {
-        async ensure() {},
-        async prompt(_m: string, turnId: string) {
-          opts.onEvent?.({ type: "text_delta", turnId, text: "ok" })
-          opts.onEvent?.({ type: "turn_end", turnId })
-          return { text: "ok" }
-        },
-        async cancel() {},
-        async close() {},
-      } as unknown as CursorSession
-    },
   })
   service.attach(vault.db, {
     workspaceRoot,
@@ -101,25 +75,6 @@ describe("★ SearchService.create 不再 cpSync skill 到 cwd", () => {
     const { vault, service } = makeService()
     try {
       expect(() => service.create("查询")).not.toThrow()
-    } finally {
-      vault.close()
-    }
-  })
-})
-
-describe("★ CursorSession 的 cwd 落在会话 workspace", () => {
-  it("★★ prompt 时 createCursorSession 收到会话 acpCwd", async () => {
-    let seenCwd: string | undefined
-    const { vault, service, workspaceRoot } = makeService({
-      skillsDir: SKILLS_RESOURCE,
-      onCreateSession: (opts) => {
-        seenCwd = opts.cwd
-      },
-    })
-    try {
-      const session = service.create("查询")
-      await service.prompt(session.id, "查询")
-      expect(seenCwd).toBe(join(workspaceRoot, "search", session.id))
     } finally {
       vault.close()
     }

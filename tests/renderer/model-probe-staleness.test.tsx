@@ -66,8 +66,6 @@ function installApi(): void {
             embeddingDim: 2048,
             sendDimensions: true,
           },
-          cursorApiKey: { configured: false, tail: null, source: "default" as const },
-          cursorRuntime: { value: "local" as const, source: "default" as const },
         }),
       save: () => ok({ appliedNow: true, needsRestart: [] as ("agent" | "klServer")[] }),
       probe: () =>

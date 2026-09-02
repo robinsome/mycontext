@@ -25,18 +25,12 @@
  */
 import type { LoadedConfig, Logger } from "@mycontext/kernel"
 import type {
-  CursorRuntime,
   ModelProvider,
   RuntimeConfigView,
   RuntimeConfigApply,
   RuntimeConfigProbe,
 } from "@mycontext/ipc-contract"
 import type { SettingsRepository } from "@mycontext/store"
-import {
-  ensureCursorApiKey,
-  tryReadSdkAuthApiKeySync,
-  type EnsuredCursorCredential,
-} from "@mycontext/agent-runtime"
 
 /** 落库的非敏感覆盖项（apiKey 走 keychain，不在这里）。 */
 interface StoredOverrides {
@@ -52,8 +46,6 @@ interface StoredOverrides {
   klModelMain?: string
   /** 知识库协议覆盖。缺省 = 走默认层（kernel 默认 openai）。 */
   klProvider?: ModelProvider
-  /** Agent 运行时落点覆盖。缺省 = 走默认层（kernel 默认 local）。 */
-  cursorRuntime?: CursorRuntime
 }
 
 /** 进程内消费者要的明文解析结果。 */
@@ -74,10 +66,6 @@ export interface ResolvedRuntimeConfig {
   klModel: string
   /** KL 抽取协议（默认层 ?? 用户覆盖）。传给 kl 的 `KL_LLM_PROVIDER`。 */
   klProvider: ModelProvider
-  /** Agent 运行时 API Key（secret ?? 默认层；CURSOR_API_KEY 由 loadConfig 双读进默认层）。 */
-  cursorApiKey: string
-  /** Agent 运行时落点（用户覆盖 ?? 默认层）。 */
-  cursorRuntime: CursorRuntime
 }
 
 /** 保存输入：字符串三态见 contract 的 saveRuntimeConfigInputSchema。 */
@@ -97,10 +85,6 @@ export interface SaveRuntimeConfigPatch {
   klModelMain?: string | undefined
   /** 知识库协议。undefined = 不改。 */
   klProvider?: ModelProvider | undefined
-  /** Agent API Key。undefined = 不改，null/"" = 清空。 */
-  cursorApiKey?: string | null | undefined
-  /** Agent 运行时落点。undefined = 不改。 */
-  cursorRuntime?: CursorRuntime | undefined
 }
 
 export interface RuntimeConfigServiceOptions {
@@ -122,8 +106,6 @@ const SETTING_KEY = "runtime_llm_config"
 const LLM_API_KEY_SECRET = "runtime_llm_api_key"
 const EMBED_API_KEY_SECRET = "runtime_embed_api_key"
 const KL_API_KEY_SECRET = "runtime_kl_api_key"
-/** Agent 运行时 API Key（keychain；与 llm/kl 同型）。 */
-const CURSOR_API_KEY_SECRET = "runtime_cursor_api_key"
 
 /** 旧的隐藏高级面板存储位（首次运行 adopt 用）。 */
 const LEGACY_ADVANCED_KEY = "advanced_ai_config"
@@ -133,11 +115,6 @@ type FieldSource = RuntimeConfigView["llmBaseUrl"]["source"]
 
 export class RuntimeConfigService {
   private readonly listeners = new Set<(resolved: ResolvedRuntimeConfig) => void>()
-  /**
-   * 本机 CLI / SDK auth 桥接来的 Agent Key（不写 MyContext keychain）。
-   * 用户在设置里粘贴的 secret 仍优先。
-   */
-  private bridgedCursorApiKey: string | null = null
 
   constructor(private readonly options: RuntimeConfigServiceOptions) {
     this.adoptLegacyIfNeeded()
@@ -165,11 +142,6 @@ export class RuntimeConfigService {
     // ★ 桌面端只走 OpenAI 兼容口；历史 anthropic / env 覆盖一律当作 openai。
     const mainProvider: ModelProvider = "openai"
     const embedModel = pick(stored.embedModel, d.embedModel)
-    const cursorApiKey =
-      this.options.secretStore.read(CURSOR_API_KEY_SECRET) ??
-      this.bridgedCursorApiKey ??
-      d.cursorApiKey
-    const cursorRuntime: CursorRuntime = stored.cursorRuntime ?? d.cursorRuntime
 
     const embedBaseRaw = pick(stored.embedLlmBaseUrl, d.embedLlmBaseUrl)
     const embedApiRaw = this.options.secretStore.read(EMBED_API_KEY_SECRET) ?? d.embedLlmApiKey
@@ -194,8 +166,6 @@ export class RuntimeConfigService {
       klApiKey: klApiRaw.trim() !== "" ? klApiRaw : llmApiKey,
       klModel: klModelRaw.trim() !== "" ? klModelRaw : modelMain,
       klProvider,
-      cursorApiKey,
-      cursorRuntime,
     }
   }
 
@@ -222,7 +192,7 @@ export class RuntimeConfigService {
 
     const secret = (
       secretKey: string,
-      defaultKey: "llmApiKey" | "embedLlmApiKey" | "klLlmApiKey" | "cursorApiKey",
+      defaultKey: "llmApiKey" | "embedLlmApiKey" | "klLlmApiKey",
     ): { configured: boolean; tail: string | null; source: FieldSource } => {
       const fromSecret = this.options.secretStore.read(secretKey)
       if (fromSecret !== null && fromSecret !== "") {
@@ -283,83 +253,7 @@ export class RuntimeConfigService {
         embeddingDim: resolved.embeddingDim,
         sendDimensions: resolved.embedSendDimensions,
       },
-      cursorApiKey: this.cursorApiKeyView(secret),
-      cursorRuntime: {
-        value: resolved.cursorRuntime,
-        source: stored.cursorRuntime !== undefined ? "user" : this.defaultSource("cursorRuntime"),
-      },
     }
-  }
-
-  /**
-   * Agent Key 展示：用户 secret > 本机 CLI/SDK 桥接 > 默认层。
-   * 桥接显示 `source: "cli"`，避免设置页误以为「未配置」而关掉 Agent。
-   */
-  private cursorApiKeyView(
-    secret: (
-      secretKey: string,
-      defaultKey: "llmApiKey" | "embedLlmApiKey" | "klLlmApiKey" | "cursorApiKey",
-    ) => { configured: boolean; tail: string | null; source: FieldSource },
-  ): RuntimeConfigView["cursorApiKey"] {
-    const fromSecret = this.options.secretStore.read(CURSOR_API_KEY_SECRET)
-    if (fromSecret !== null && fromSecret !== "") {
-      return secret(CURSOR_API_KEY_SECRET, "cursorApiKey")
-    }
-    const bridged = this.bridgedCursorApiKey?.trim() ?? ""
-    if (bridged !== "") {
-      return {
-        configured: true,
-        // source 扩展了 `cli`；FieldSource 类型仍来自 llmBaseUrl，此处收窄到 secret 字段。
-        tail: bridged.length >= 4 ? bridged.slice(-4) : null,
-        source: "cli",
-      }
-    }
-    return secret(CURSOR_API_KEY_SECRET, "cursorApiKey")
-  }
-
-  /**
-   * 同步采纳 `~/.cursor/sdk/auth.json`（上次 CLI 桥接或 `Cursor.auth.login` 留下的）。
-   * bootstrap 是同步的，铸造走异步 `ensureCliCursorAuth`；有缓存时启动当下就能用。
-   */
-  adoptLocalCursorAuthSync(): boolean {
-    if (this.hasConfiguredCursorApiKey()) return false
-    const apiKey = tryReadSdkAuthApiKeySync()
-    if (apiKey === null) return false
-    this.bridgedCursorApiKey = apiKey
-    this.seedProcessEnv()
-    return true
-  }
-
-  private hasConfiguredCursorApiKey(): boolean {
-    const fromSecret = this.options.secretStore.read(CURSOR_API_KEY_SECRET)?.trim() ?? ""
-    if (fromSecret !== "") return true
-    if ((this.bridgedCursorApiKey?.trim() ?? "") !== "") return true
-    if (this.options.defaults.values.cursorApiKey.trim() !== "") return true
-    return false
-  }
-
-  /**
-   * 启动时：设置/env 都没有 Agent Key 时，尝试本机 `cursor-agent` 登录
-   *（钥匙串 access token → 铸造 User API Key → SDK auth 存储）。
-   */
-  async ensureCliCursorAuth(): Promise<EnsuredCursorCredential> {
-    const fromSecret = this.options.secretStore.read(CURSOR_API_KEY_SECRET)?.trim() ?? ""
-    const fromDefault = this.options.defaults.values.cursorApiKey.trim()
-    const fromBridge = this.bridgedCursorApiKey?.trim() ?? ""
-    const explicit = fromSecret !== "" ? fromSecret : fromBridge !== "" ? fromBridge : fromDefault
-    const result = await ensureCursorApiKey({
-      explicitKey: explicit,
-      env: this.options.env ?? process.env,
-    })
-    if (result.source === "cli-login" || result.source === "sdk-store") {
-      this.bridgedCursorApiKey = result.apiKey
-      this.seedProcessEnv()
-      const resolved = this.resolved()
-      for (const listener of this.listeners) listener(resolved)
-    } else if (result.source === "missing" && fromBridge === "" && fromSecret === "") {
-      this.bridgedCursorApiKey = null
-    }
-    return result
   }
 
   /**
@@ -369,11 +263,11 @@ export class RuntimeConfigService {
   save(patch: SaveRuntimeConfigPatch, nowIso: string): RuntimeConfigApply {
     const stored = this.readStored()
 
-    // 只作用于**自由串**字段（mainProvider/klProvider/cursorRuntime 是枚举；
+    // 只作用于**自由串**字段（mainProvider/klProvider 是枚举；
     // embeddingDim/embedSendDimensions 是数值/布尔，单独处理，见下）。
     type StringKey = Exclude<
       keyof StoredOverrides,
-      "mainProvider" | "klProvider" | "cursorRuntime" | "embeddingDim" | "embedSendDimensions"
+      "mainProvider" | "klProvider" | "embeddingDim" | "embedSendDimensions"
     >
     const merge = (key: StringKey, value: string | undefined): void => {
       if (value === undefined) return
@@ -396,7 +290,6 @@ export class RuntimeConfigService {
     // 协议固定 openai（Anthropic 接口已从桌面端移除）；落点是枚举，给了就覆盖。
     if (patch.mainProvider !== undefined) stored.mainProvider = "openai"
     if (patch.klProvider !== undefined) stored.klProvider = "openai"
-    if (patch.cursorRuntime !== undefined) stored.cursorRuntime = patch.cursorRuntime
 
     this.options.settings.set(SETTING_KEY, JSON.stringify(stored), nowIso)
 
@@ -404,7 +297,6 @@ export class RuntimeConfigService {
     this.writeSecret(LLM_API_KEY_SECRET, patch.llmApiKey)
     this.writeSecret(EMBED_API_KEY_SECRET, patch.embedLlmApiKey)
     this.writeSecret(KL_API_KEY_SECRET, patch.klLlmApiKey)
-    this.writeSecret(CURSOR_API_KEY_SECRET, patch.cursorApiKey)
 
     this.seedProcessEnv()
 
@@ -420,7 +312,7 @@ export class RuntimeConfigService {
       // 进程内消费者（数字人直连、autoBuild 判定）下一次调用就用新值
       appliedNow: true,
       // 两条子进程路要重启才生效（env 在 spawn 时定死）
-      needsRestart: ["agent", "klServer"],
+      needsRestart: ["klServer"],
     }
   }
 
@@ -606,20 +498,6 @@ export class RuntimeConfigService {
      * 也带上，见 startup.ts）。装配层同样会显式传，这一行是给单测/脚本兜底。
      */
     set("MYCONTEXT_MODEL_PROVIDER", resolved.mainProvider)
-    /**
-     * Agent 运行时凭据 / 落点。
-     *
-     * `CURSOR_API_KEY` 与 `MYCONTEXT_CURSOR_API_KEY` 同义双写 —— SDK / 文档常认前者，
-     * 本仓库约定认后者；只 seed 一边会被另一边的残留值压过或子进程读不到。
-     * 空值 delete（不是留空串）：清空后不应让旧 key 继续透传给下一次 spawn。
-     */
-    const setOrClear = (key: string, value: string): void => {
-      if (value.trim() !== "") env[key] = value
-      else delete env[key]
-    }
-    setOrClear("CURSOR_API_KEY", resolved.cursorApiKey)
-    setOrClear("MYCONTEXT_CURSOR_API_KEY", resolved.cursorApiKey)
-    set("MYCONTEXT_CURSOR_RUNTIME", resolved.cursorRuntime)
   }
 
   /** 订阅配置变化（LlmHolder 重配 / 向渲染层推事件）。返回取消订阅。 */

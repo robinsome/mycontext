@@ -20,19 +20,15 @@
  * 「判定说不必回」与「生成失败了」长得一样 —— 前者是正常工作，后者要修。
  * 现在两者走同一个出口：`text: null` + `noReplyReason`，形态不同。
  *
- * ## 两条路，产出同形
+ * ## 传输
  *
- * **主路**：Cursor 订阅（`PersonaAcp` / `@cursor/sdk`）；起不来 / 超时 / 0-token /
- * 带图 → **Fallback**：`LlmClient` 直连 OpenAI 兼容网关。
- * **两条路返回同一个 `ReplyProposal`** —— 于是"用哪条路"不改变下游任何判断。
- * 降级必须明示（`provenance.degradedReason`），因为静默降级是这个项目里
- * 反复出现的那类失效。
+ * 经 `LlmClient` 直连 OpenAI 兼容网关（可指向 LiteLLM Proxy）。
+ * 带图、工具召回（`recall`）均走同一路。
  */
 import type { Clock, Logger } from "@mycontext/kernel"
 import type { LlmProvider } from "@mycontext/llm"
 import type { ReplyProposal, TurnRequest, TurnUnderstanding } from "@mycontext/persona"
 import { FtsIndexRepository, MessageRepository, type SqliteDatabase } from "@mycontext/store"
-import type { PersonaAcp } from "./persona-acp.js"
 import { extractDraftEnvelope } from "./persona-draft.js"
 import type { PersonaMemory, MemoryHit } from "./persona-memory.js"
 import { RECALL_TOOL, createRecallExecutor } from "./persona-recall-tool.js"
@@ -100,8 +96,6 @@ export interface ComposerOptions {
   clock: Clock
   logger: Logger
   llmProvider: LlmProvider
-  /** null = 这个部署刻意不带 agent 编排（测试 / 精简形态），不是故障。 */
-  acp: PersonaAcp | null
   memory: PersonaMemory
   /** 本人在渠道里的显示名 —— 查记忆时排除掉（`people.md` 已经按人给了语气）。 */
   getSelfNames?: () => readonly string[]
@@ -191,85 +185,19 @@ export class PersonaComposer {
       renderTask(understanding, this.triggerText(turn), memory),
     ]
 
-    /**
-     * ★ 先试 ACP，起不来才落回直连。
-     *
-     * 两条路的 guidance 不同（变的只有"参考件由谁提供"）：ACP 路 agent 能
-     * 自己读 `skills.paths`，而 ACP session 跨轮复用 —— 每轮把同样的正文再
-     * 发一遍会在对端累积（实测一个活跃会话连续九轮，token 从一万余涨到
-     * 十一万余，其中绝大部分是同一批 markdown 被重复发了九次）。
-     *
-     * **任务段两条路完全相同** —— 它是本轮特有的事实，与 agent 有没有 shell
-     * 无关，而两条路产出同一个信封形状是下游全部判断的前提。
-     */
-    const acpPrompt = [this.options.readGuidance(cwd, { agentReadsSkills: true }), ...task].join(
-      "\n\n",
-    )
-    const acp = this.options.acp
-    const acpResult =
-      acp === null
-        ? null
-        : await acp.turn({
-            conversationId: turn.conversationId,
-            prompt: acpPrompt,
-            ...(images.length === 0 ? {} : { images }),
-          })
-
-    if (acpResult !== null && acpResult.text !== null) {
-      const envelope = extractDraftEnvelope(acpResult.text)
-      this.options.logger.info("compose draft generated", {
-        conversationId: turn.conversationId,
-        via: "acp",
-        length: envelope.text.length,
-        tools: envelope.text === "" ? [] : acpResult.toolNames,
-        tokens: acpResult.totalTokens,
-      })
-      return this.toProposal(envelope, {
-        via: "acp",
-        toolNames: acpResult.toolNames,
-        totalTokens: acpResult.totalTokens,
-        degradedReason: null,
-      })
-    }
-
-    if (acp !== null) {
-      /**
-       * ★ warn 而不是 info：ACP 声称可用却 turn 出空 —— 那是**降级**，
-       * 不是常态。带上具体原因（版本太老 / 起不来 / 0-token），否则用户
-       * 只看到"怎么都在出草稿不自动发"而查不到根因。
-       */
-      this.options.logger.warn("compose falling back to direct llm", {
-        conversationId: turn.conversationId,
-        reason: acp.degradedReason() ?? "acp_turn_empty",
-        model: this.options.getModel?.() ?? "(env default)",
-      })
-    }
-
-    // ── 直连路 ────────────────────────────────────────────────────────
     const db = this.options.db()
     const repos = { fts: new FtsIndexRepository(db), messages: new MessageRepository(db) }
     let recallCalls = 0
     const completion = await client.completeWithTools({
       messages: [
-        // 直连路没有 skill 机制，参考件必须给全
         {
           role: "system",
           content: this.options.readGuidance(cwd, { agentReadsSkills: false }),
         },
         ...(reviewContext === "" ? [] : [{ role: "system" as const, content: reviewContext }]),
         {
-          // ★ 语料只进 user，永不拼进 system（与 map 阶段同一条安全性质）
           role: "user",
-          content: `最近的对话：\n${transcript}\n\n${renderTask(
-            understanding,
-            this.triggerText(turn),
-            memory,
-          )}`,
-          /**
-           * ★ 图**两条路都要给**。不给的话会出现"agent 路能看图、降级路
-           * 看不到"，而降级是常态 —— 那种不一致最难查：同一个会话同一张图，
-           * 有时草稿提到了图里的内容、有时完全没提，而两次日志都是"生成成功"。
-           */
+          content: task.join("\n\n"),
           ...(images.length === 0
             ? {}
             : {
@@ -303,10 +231,6 @@ export class PersonaComposer {
 
     const envelope = extractDraftEnvelope(completion.text)
     if (envelope.reviewReason === "agent_output_unstructured") {
-      /**
-       * 实测过一次：模型把 414 个字符的**思考过程**当成正文返回了。
-       * 那条草稿如果被发出去，收到的人会看到我们的提示词内容。
-       */
       this.options.logger.warn("compose draft looked like reasoning; trimmed", {
         conversationId: turn.conversationId,
         originalLength: completion.text.length,
@@ -315,10 +239,9 @@ export class PersonaComposer {
     }
     return this.toProposal(envelope, {
       via: "llm",
-      // 直连路的工具调用形状不同（`recallCalls` 单独计），所以不报告工具名
-      toolNames: null,
+      toolNames: recallCalls > 0 ? ["recall"] : null,
       totalTokens: null,
-      degradedReason: acp === null ? null : (acp.degradedReason() ?? "acp_turn_empty"),
+      degradedReason: null,
     })
   }
 
@@ -388,7 +311,6 @@ function renderTask(
   const lines: string[] = []
 
   if (messageCount > 1) {
-    // 条数要说出来：模型据此判断"这是一件事还是几件事"，而这决定回几条。
     lines.push(
       `对方连发了 ${String(messageCount)} 条，这些**合起来**是你要回的一个整体：`,
       text,
@@ -414,14 +336,6 @@ function renderTask(
     }
   }
 
-  /**
-   * ★ 记忆放在先例**之后**、防编造之前 —— 顺序是刻意的：先例决定"怎么说"，
-   * 记忆决定"说什么"，而防编造那句约束的是记忆**之外**的一切。
-   *
-   * 写明"这是你知道的事"而不是"资料显示"：这些是本人自己聊天记录里的事实，
-   * 用第三人称的口气引用会让模型在回复里解释来源 —— 而本人不会对自己的狗
-   * 解释"根据记录"。
-   */
   if (memory.length > 0) {
     lines.push("", "你已经知道的事（对方提到的东西，来自你自己的聊天记录）：")
     for (const hit of memory) {
@@ -430,30 +344,11 @@ function renderTask(
     lines.push("直接把这些当已知的事用，不要说「根据记录」或解释你是怎么知道的。")
   }
 
-  /**
-   * ★ 澄清选项：本人自己问澄清问题的**原话**。
-   *
-   * 这一段是新接的 —— forge 的 `clarifyOption` 一直在 payload 里，而 host
-   * 从来没读过它。它治的正是"贴合本人"这件事：当对方提到的东西库里查得到
-   * 主题但查不到被问的那部分时，最诚实的动作是**问一句是哪个**，
-   * 而用本人自己的措辞问比用一句通用的「方便说下是哪个吗」像得多。
-   *
-   * ★ **空数组是结论，不是缺省**：语料里没有这个习惯就不要凭空造一句 ——
-   * 问回去不是普遍的礼貌，它要么是这个人会做的事，要么不是。
-   */
   if (understanding.clarifyOptions.length > 0) {
     lines.push("", "如果对方问的具体是哪一个你拿不准，他平时会这样问回去（用他的说法，别自己造）：")
     for (const line of understanding.clarifyOptions.slice(0, 3)) lines.push(`- ${line}`)
   }
 
-  /**
-   * ★ 防编造这一条**无条件**给，且不列具体词。
-   *
-   * 曾经这里会写「这些说法在他的历史记录里查得到：<terms>」。而 forge 给的
-   * term 是滑窗切出来的 n-gram 碎片，不是主题词 —— 无分词语言里那些碎片往往
-   * 是半个词组。于是那一行对模型零信息，还会稀释紧跟其后的「不要编」，
-   * 而后者是这一段唯一真正重要的指令。
-   */
   lines.push(
     "",
     "涉及具体事实（时间、数字、谁负责、什么状态）的，**没把握就不要写** —— " +
@@ -475,5 +370,5 @@ function renderReviewFeedback(feedback: readonly ReviewFeedback[]): string {
     }
     return `- 用户直接采用过草稿：${original}`
   })
-  return ["当前 agent session 内的审核偏好（只用于本会话）：", ...lines].join("\n")
+  return ["当前 session 内的审核偏好（只用于本会话）：", ...lines].join("\n")
 }

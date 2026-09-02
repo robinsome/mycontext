@@ -136,9 +136,7 @@ export {
   probeRuntimeConfigInputSchema,
   runtimeConfigProbeSchema,
   modelProviderSchema,
-  cursorRuntimeSchema,
   runtimeConfigProviderFieldSchema,
-  runtimeConfigCursorRuntimeFieldSchema,
 } from "./contract.js"
 
 export type {
@@ -243,7 +241,6 @@ export type {
   ProbeRuntimeConfigInput,
   RuntimeConfigProbe,
   ModelProvider,
-  CursorRuntime,
 } from "./contract.js"
 
 export type { MyContextApi } from "./api.js"

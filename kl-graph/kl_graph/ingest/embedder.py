@@ -1,4 +1,4 @@
-"""Embedding client（OpenAI 兼容 HTTP，经 http_llm）。"""
+"""Embedding client（OpenAI 兼容 HTTP，经 litellm）。"""
 
 from __future__ import annotations
 
@@ -293,7 +293,7 @@ class Embedder:
     async def _aembed(self, texts: list[str]) -> list[list[float]]:
         """Async single-request embed with the same retry policy as ``_embed``.
 
-        Uses ``litellm.aembedding``（http_llm）so the caller (the async query
+        Uses ``litellm.aembedding`` so the caller (the async query
         engine) can ``await`` the network round-trip and free the event loop
         while the embedding endpoint works. The bounded exponential backoff
         mirrors ``_embed_with_retry`` but ``await``s ``asyncio.sleep`` instead of

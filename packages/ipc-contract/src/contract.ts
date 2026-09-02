@@ -3997,20 +3997,9 @@ export const modelProviderSchema = z.enum(["openai", "anthropic"])
 
 export type ModelProvider = z.infer<typeof modelProviderSchema>
 
-/** Agent 运行时落点：本地进程 / 云端。默认 local（见 kernel `MYCONTEXT_CURSOR_RUNTIME`）。 */
-export const cursorRuntimeSchema = z.enum(["local", "cloud"])
-
-export type CursorRuntime = z.infer<typeof cursorRuntimeSchema>
-
 /** 协议字段的展示形态（值 + 来源标记）。主模型与知识库各有一个。 */
 export const runtimeConfigProviderFieldSchema = z.object({
   value: modelProviderSchema,
-  source: z.enum(["user", "env", "dotenv", "default"]),
-})
-
-/** Agent 运行时落点字段（值 + 来源标记）。 */
-export const runtimeConfigCursorRuntimeFieldSchema = z.object({
-  value: cursorRuntimeSchema,
   source: z.enum(["user", "env", "dotenv", "default"]),
 })
 
@@ -4019,8 +4008,7 @@ export const runtimeConfigSecretFieldSchema = z.object({
   /** 已配置时给后 4 位，未配置为 null */
   tail: z.string().nullable(),
   /**
-   * `cli`：本机 `cursor-agent login` / SDK auth 存储桥接来的 Agent Key
-   * （用户未在设置里粘贴，但运行时可用）。
+   * `cli`：历史兼容字段，当前未使用。
    */
   source: z.enum(["user", "env", "dotenv", "default", "cli"]),
 })
@@ -4037,7 +4025,6 @@ export const runtimeConfigBooleanFieldSchema = z.object({
  * 主配置（`llm*` / `modelMain` / `embedModel`）+ KL 专用三项。
  * KL 三项留空表示「回退主配置」，所以视图里额外给 `klEffective*`
  * （真正会用到的值，已解析回退），让 UI 能显示「当前实际用的是 X」。
- * 另含 Agent 运行时凭据（`cursorApiKey`）与落点（`cursorRuntime`）。
  */
 export const runtimeConfigViewSchema = z.object({
   llmBaseUrl: runtimeConfigFieldSchema,
@@ -4076,15 +4063,6 @@ export const runtimeConfigViewSchema = z.object({
     embeddingDim: z.number().int(),
     sendDimensions: z.boolean(),
   }),
-  /**
-   * Agent 运行时 API Key（敏感）。空 = Agent 对话降级。
-   * 形状与 `llmApiKey` 相同：只给 configured + 后 4 位。
-   */
-  cursorApiKey: runtimeConfigSecretFieldSchema,
-  /**
-   * Agent 运行时落点（local / cloud）。有默认层（kernel 默认 local）。
-   */
-  cursorRuntime: runtimeConfigCursorRuntimeFieldSchema,
 })
 
 export type RuntimeConfigView = z.infer<typeof runtimeConfigViewSchema>
@@ -4113,10 +4091,6 @@ export const saveRuntimeConfigInputSchema = z.object({
   klModelMain: z.string().max(200).optional(),
   /** 知识库协议。undefined = 不改；两个枚举值之一 = 覆盖 */
   klProvider: modelProviderSchema.optional(),
-  /** Agent API Key。三态同 llmApiKey */
-  cursorApiKey: z.string().max(500).nullable().optional(),
-  /** Agent 运行时落点。undefined = 不改 */
-  cursorRuntime: cursorRuntimeSchema.optional(),
 })
 
 export type SaveRuntimeConfigInput = z.infer<typeof saveRuntimeConfigInputSchema>

@@ -50,7 +50,6 @@
 import { useState } from "react"
 import { Button, Field, Input, Tag, cn } from "@mycontext/design"
 import type {
-  CursorRuntime,
   RuntimeConfigProbe,
   RuntimeConfigView,
   SaveRuntimeConfigInput,
@@ -100,10 +99,6 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
   const [klBaseUrl, setKlBaseUrl] = useState<string | null>(null)
   const [klModel, setKlModel] = useState<string | null>(null)
   const [klApiKey, setKlApiKey] = useState("")
-  /** Agent API Key 草稿（空串 = 不改，与 llmApiKey 同语义）。 */
-  const [cursorApiKey, setCursorApiKey] = useState("")
-  /** Agent 运行时落点草稿。null = 未编辑。 */
-  const [cursorRuntime, setCursorRuntime] = useState<CursorRuntime | null>(null)
   /** 模型名手输模式（探测列表里没有想要的那个时） */
   const [customModel, setCustomModel] = useState(false)
   /** 知识库模型手输模式 */
@@ -158,10 +153,8 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
     embedSendDimensions !== null ||
     klBaseUrl !== null ||
     klModel !== null ||
-    cursorRuntime !== null ||
     apiKey !== "" ||
-    klApiKey !== "" ||
-    cursorApiKey !== ""
+    klApiKey !== ""
 
   const submit = (): void => {
     const patch: SaveRuntimeConfigInput = {}
@@ -180,14 +173,11 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
     if (klBaseUrl !== null) patch.klLlmBaseUrl = klBaseUrl
     if (klModel !== null) patch.klModelMain = klModel
     if (klApiKey !== "") patch.klLlmApiKey = klApiKey
-    if (cursorApiKey !== "") patch.cursorApiKey = cursorApiKey
-    if (cursorRuntime !== null) patch.cursorRuntime = cursorRuntime
     save.mutate(patch, {
       onSuccess: () => {
         // 草稿清空 → dirty 回到 false（保存后按钮自然禁掉）
         setApiKey("")
         setKlApiKey("")
-        setCursorApiKey("")
         setLlmBaseUrl(null)
         setModelMain(null)
         setEmbedModel(null)
@@ -197,7 +187,6 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
         setEmbedSendDimensions(null)
         setKlBaseUrl(null)
         setKlModel(null)
-        setCursorRuntime(null)
         onSaved?.()
       },
     })
@@ -278,8 +267,6 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
   })()
 
   const klModelValue = klModel ?? current.klModelMain.value
-
-  const effectiveCursorRuntime: CursorRuntime = cursorRuntime ?? current.cursorRuntime.value
 
   return (
     <div className="flex flex-col gap-[var(--gap-section-lg)]">
@@ -502,55 +489,6 @@ export function ModelConfigForm({ onSaved, saveLabel }: ModelConfigFormProps) {
           </div>
           <span className="typography-caption-400 text-[var(--text-base-tertiary)]">
             {t("model.embed.sendDimensionsHint")}
-          </span>
-        </div>
-      </section>
-
-      {/*
-        Agent 运行时凭据 + 落点。
-        主用订阅密钥；上方「模型网关」是 OpenAI 兼容 Fallback（搜索归纳 / 分身直连）。
-        文案刻意不堆第三方产品名（商标门禁）—— 说「Agent API Key」「本地 / 云端」。
-      */}
-      <section className="flex flex-col gap-[var(--gap-section-sm)]">
-        <div className="flex flex-col gap-[var(--gap-component-sm)]">
-          <div className="flex items-center gap-2">
-            <span className="typography-body-small-400 text-[var(--text-base-secondary)]">
-              {t("model.agent.apiKey")}
-            </span>
-            <KeyTag field={current.cursorApiKey} />
-          </div>
-          <Input
-            type="password"
-            aria-label={t("model.agent.apiKey")}
-            value={cursorApiKey}
-            onChange={(event) => setCursorApiKey(event.target.value)}
-            placeholder={t("model.provider.apiKeyPlaceholder")}
-          />
-          <span className="typography-caption-400 text-[var(--text-base-tertiary)]">
-            {t("model.agent.apiKeyHint")}
-          </span>
-        </div>
-
-        <div className="flex flex-col gap-[var(--gap-component-sm)]">
-          <span className="typography-body-small-400 text-[var(--text-base-secondary)]">
-            {t("model.agent.runtime")}
-          </span>
-          <div className="flex flex-wrap gap-1.5">
-            <Chip
-              selected={effectiveCursorRuntime === "local"}
-              onClick={() => setCursorRuntime("local")}
-            >
-              {t("model.agent.runtimeLocal")}
-            </Chip>
-            <Chip
-              selected={effectiveCursorRuntime === "cloud"}
-              onClick={() => setCursorRuntime("cloud")}
-            >
-              {t("model.agent.runtimeCloud")}
-            </Chip>
-          </div>
-          <span className="typography-caption-400 text-[var(--text-base-tertiary)]">
-            {t("model.agent.runtimeHint")}
           </span>
         </div>
       </section>

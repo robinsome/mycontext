@@ -1,8 +1,4 @@
-"""Shared LLM transport configuration（不再依赖 litellm）。
-
-历史文件名保留：调用方大量 ``from kl_graph.utils.litellm_config import …``。
-``litellm`` 名字现在指向 ``http_llm`` 兼容模块。
-"""
+"""Shared LiteLLM transport configuration."""
 
 from __future__ import annotations
 
@@ -11,11 +7,14 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from kl_graph.utils import http_llm as litellm
+import litellm
 
 # Trailing runs of the OpenAI version segment, e.g. the doubled suffix a
 # caller produces when it appends /v1 to a base URL that already ends in /v1.
 _TRAILING_V1_RUN = re.compile(r"(/v1)+$")
+
+# httpx tolerates non-ASCII gateway response headers that break aiohttp.
+litellm.disable_aiohttp_transport = True
 
 
 @dataclass(frozen=True)
@@ -30,7 +29,7 @@ class LLMConnection:
 
 
 def provider_model(provider: str, model: str) -> str:
-    """Return a provider/model identifier without duplicating its provider."""
+    """Return a LiteLLM model identifier without duplicating its provider."""
     provider = provider.strip().rstrip("/")
     if not provider or model.startswith(f"{provider}/"):
         return model
@@ -43,10 +42,8 @@ def provider_api_key(provider: str, explicit: str | None = None) -> str | None:
     · anthropic → ``ANTHROPIC_AUTH_TOKEN``
     · openai（及其它）→ ``OPENAI_API_KEY`` / ``MYCONTEXT_LLM_API_KEY``
 
-    桌面端建图固定 openai，并把用户 key 写进 ``OPENAI_API_KEY``。旧实现这里对
-    openai 恒返回 None，http_llm 于是用 Bearer ``not-needed`` → 网关
-    ``Invalid token`` / ``ai_gateway_error``。
-    """
+    桌面端建图固定 openai，并把用户 key 写进 ``OPENAI_API_KEY``。
+  """
     if explicit:
         return explicit
     if provider.strip().lower() == "anthropic":
@@ -59,11 +56,11 @@ def provider_api_key(provider: str, explicit: str | None = None) -> str | None:
 
 
 def litellm_base_url(provider: str, base_url: str) -> str:
-    """Normalize a base URL to the shape each transport expects.
+    """Normalize a base URL to the shape litellm's transport for it expects.
 
     - **OpenAI-compatible** — client appends ``/chat/completions`` /
       ``/embeddings``; base must end in **exactly one** ``/v1``.
-    - **Anthropic** — we append ``/v1/messages`` ourselves; base must be a
+    - **Anthropic** — litellm appends ``/v1/messages`` itself; base must be a
       **bare host** (no trailing ``/v1``).
 
     Empty values pass through.
